@@ -1,0 +1,1405 @@
+{
+  "info": {
+    "_postman_id": "3d26fb29-4f01-4b22-beaa-63473ea4a76d",
+    "name": "App",
+    "description": "Inference-logging chatbot API: conversations, messages, the chat turn endpoint that calls the configured provider (OpenAI), inference log ingestion, and the read-only logs API for observability.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "conversationId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "logRequestId",
+      "value": "dfa22e5d7aaf42faa40edd8fb0863526",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/health",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "health"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": \"ok\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Conversations",
+      "item": [
+        {
+          "name": "Create Conversation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/conversations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "conversations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Debugging the SQLite migration\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/conversations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "conversations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"Debugging the SQLite migration\"\n}"
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": 1,\n  \"title\": \"Debugging the SQLite migration\",\n  \"status\": \"active\",\n  \"created_at\": \"2026-08-01T14:03:12.481Z\",\n  \"updated_at\": \"2026-08-01T14:03:12.481Z\"\n}"
+            },
+            {
+              "name": "Validation Error - title too long",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/conversations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "conversations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"a very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very long title over two hundred characters................................................................................................\"\n}"
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": [\n    {\n      \"type\": \"string_too_long\",\n      \"loc\": [\n        \"body\",\n        \"title\"\n      ],\n      \"msg\": \"String should have at most 200 characters\",\n      \"input\": \"a very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very long title over two hundred characters................................................................................................\",\n      \"ctx\": {\n        \"max_length\": 200\n      }\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "List Conversations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/conversations?limit=20&offset=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "conversations"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/conversations?limit=20&offset=0",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "conversations"
+                  ],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    },
+                    {
+                      "key": "offset",
+                      "value": "0"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"items\": [\n    {\n      \"id\": 1,\n      \"title\": \"Debugging the SQLite migration\",\n      \"status\": \"active\",\n      \"created_at\": \"2026-08-01T14:03:12.481Z\",\n      \"updated_at\": \"2026-08-01T14:05:47.109Z\"\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 20,\n  \"offset\": 0\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Conversation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/conversations/:conversation_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "conversations",
+                ":conversation_id"
+              ],
+              "variable": [
+                {
+                  "key": "conversation_id",
+                  "value": "{{conversationId}}"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/conversations/1",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "conversations",
+                    "1"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": 1,\n  \"title\": \"Debugging the SQLite migration\",\n  \"status\": \"active\",\n  \"created_at\": \"2026-08-01T14:03:12.481Z\",\n  \"updated_at\": \"2026-08-01T14:05:47.109Z\"\n}"
+            },
+            {
+              "name": "Not Found",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/conversations/999999",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "conversations",
+                    "999999"
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": \"Conversation not found\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Messages",
+      "item": [
+        {
+          "name": "List Messages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/conversations/:conversation_id/messages?limit=20&offset=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "conversations",
+                ":conversation_id",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "conversation_id",
+                  "value": "{{conversationId}}"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/conversations/1/messages?limit=20&offset=0",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "conversations",
+                    "1",
+                    "messages"
+                  ],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    },
+                    {
+                      "key": "offset",
+                      "value": "0"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"items\": [\n    {\n      \"id\": 1,\n      \"conversation_id\": 1,\n      \"role\": \"user\",\n      \"content\": \"Why does Alembic autogenerate keep dropping my server_default?\",\n      \"created_at\": \"2026-08-01T14:04:02.331Z\"\n    },\n    {\n      \"id\": 2,\n      \"conversation_id\": 1,\n      \"role\": \"assistant\",\n      \"content\": \"Autogenerate compares Python-side defaults loosely, so a `server_default` that isn't reflected identically from the DB can look like a diff. Read the generated migration before running it, and pin the default explicitly if it keeps flip-flopping.\",\n      \"created_at\": \"2026-08-01T14:04:05.877Z\"\n    }\n  ],\n  \"total\": 2,\n  \"limit\": 20,\n  \"offset\": 0\n}"
+            },
+            {
+              "name": "Not Found - conversation does not exist",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/conversations/999999/messages?limit=20&offset=0",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "conversations",
+                    "999999",
+                    "messages"
+                  ],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    },
+                    {
+                      "key": "offset",
+                      "value": "0"
+                    }
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": \"Conversation not found\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Send Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/conversations/:conversation_id/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "conversations",
+                ":conversation_id",
+                "messages"
+              ],
+              "variable": [
+                {
+                  "key": "conversation_id",
+                  "value": "{{conversationId}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Why does Alembic autogenerate keep dropping my server_default?\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/conversations/1/messages",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "conversations",
+                    "1",
+                    "messages"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"content\": \"Why does Alembic autogenerate keep dropping my server_default?\"\n}"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"user_message\": {\n    \"id\": 1,\n    \"conversation_id\": 1,\n    \"role\": \"user\",\n    \"content\": \"Why does Alembic autogenerate keep dropping my server_default?\",\n    \"created_at\": \"2026-08-01T14:04:02.331Z\"\n  },\n  \"assistant_message\": {\n    \"id\": 2,\n    \"conversation_id\": 1,\n    \"role\": \"assistant\",\n    \"content\": \"Autogenerate compares Python-side defaults loosely, so a `server_default` that isn't reflected identically from the DB can look like a diff. Read the generated migration before running it, and pin the default explicitly if it keeps flip-flopping.\",\n    \"created_at\": \"2026-08-01T14:04:05.877Z\"\n  }\n}"
+            },
+            {
+              "name": "Not Found - conversation does not exist",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/conversations/999999/messages",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "conversations",
+                    "999999",
+                    "messages"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"content\": \"Why does Alembic autogenerate keep dropping my server_default?\"\n}"
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": \"Conversation 999999 not found.\"\n}"
+            },
+            {
+              "name": "Validation Error - empty content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/conversations/1/messages",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "conversations",
+                    "1",
+                    "messages"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"content\": \"   \"\n}"
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": [\n    {\n      \"type\": \"value_error\",\n      \"loc\": [\n        \"body\",\n        \"content\"\n      ],\n      \"msg\": \"Value error, content must not be empty or whitespace-only\",\n      \"input\": \"   \",\n      \"ctx\": {\n        \"error\": {}\n      }\n    }\n  ]\n}"
+            },
+            {
+              "name": "Bad Gateway - provider failed",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/conversations/1/messages",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "conversations",
+                    "1",
+                    "messages"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"content\": \"Why does Alembic autogenerate keep dropping my server_default?\"\n}"
+                }
+              },
+              "status": "Bad Gateway",
+              "code": 502,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": \"The model provider failed to respond (timeout).\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Ingest",
+      "item": [
+        {
+          "name": "Ingest Inference Log",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/ingest/logs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ingest",
+                "logs"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"schema_version\": 1,\n  \"request_id\": \"dfa22e5d7aaf42faa40edd8fb0863526\",\n  \"conversation_id\": 1,\n  \"call_type\": \"chat\",\n  \"model\": \"gpt-5.6-terra\",\n  \"provider\": \"openai\",\n  \"status\": \"success\",\n  \"latency_ms\": 3820,\n  \"input_tokens\": 612,\n  \"output_tokens\": 284,\n  \"time_to_first_token_ms\": null,\n  \"request_params\": {\n    \"max_tokens\": 1024,\n    \"temperature\": 1.0\n  },\n  \"config_hash\": \"9f3a7c1e2b8d4f60\",\n  \"input_messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a helpful, concise assistant.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"What's the safest way to add a NOT NULL column to a 50M-row Postgres table without locking it?\"\n    }\n  ],\n  \"output_text\": \"Add the column as nullable first, backfill in batches, then add the NOT NULL constraint as a NOT VALID check so existing rows aren't rewritten in one pass. Concretely:\\n\\n1. `ALTER TABLE ... ADD COLUMN col type` (nullable, no default) - this is instant, no table rewrite.\\n2. Backfill in small batched UPDATEs (5-10k rows at a time) so you don't hold a long-running transaction or bloat WAL.\\n3. Add `CHECK (col IS NOT NULL) NOT VALID`, which is instant.\\n4. `VALIDATE CONSTRAINT` in a separate transaction - this scans the table but only takes a lock that permits concurrent reads and writes.\\n5. Once validated, promote the column to NOT NULL; on Postgres 12+ this is metadata-only since the CHECK constraint already guarantees it.\\n\\nAvoid a single `ALTER TABLE ... ADD COLUMN col type NOT NULL DEFAULT x` - on older Postgres that rewrites every row under an ACCESS EXCLUSIVE lock for the duration.\",\n  \"provider_metadata\": {\n    \"finish_reason\": \"stop\"\n  },\n  \"requested_at\": \"2026-08-01T15:02:10.104Z\",\n  \"completed_at\": \"2026-08-01T15:02:13.926Z\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "Created - chat success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/ingest/logs",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "ingest",
+                    "logs"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"schema_version\": 1,\n  \"request_id\": \"dfa22e5d7aaf42faa40edd8fb0863526\",\n  \"conversation_id\": 1,\n  \"call_type\": \"chat\",\n  \"model\": \"gpt-5.6-terra\",\n  \"provider\": \"openai\",\n  \"status\": \"success\",\n  \"latency_ms\": 3820,\n  \"input_tokens\": 612,\n  \"output_tokens\": 284,\n  \"time_to_first_token_ms\": null,\n  \"request_params\": {\n    \"max_tokens\": 1024,\n    \"temperature\": 1.0\n  },\n  \"config_hash\": \"9f3a7c1e2b8d4f60\",\n  \"input_messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a helpful, concise assistant.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"What's the safest way to add a NOT NULL column to a 50M-row Postgres table without locking it?\"\n    }\n  ],\n  \"output_text\": \"Add the column as nullable first, backfill in batches, then add the NOT NULL constraint as a NOT VALID check so existing rows aren't rewritten in one pass. Concretely:\\n\\n1. `ALTER TABLE ... ADD COLUMN col type` (nullable, no default) - this is instant, no table rewrite.\\n2. Backfill in small batched UPDATEs (5-10k rows at a time) so you don't hold a long-running transaction or bloat WAL.\\n3. Add `CHECK (col IS NOT NULL) NOT VALID`, which is instant.\\n4. `VALIDATE CONSTRAINT` in a separate transaction - this scans the table but only takes a lock that permits concurrent reads and writes.\\n5. Once validated, promote the column to NOT NULL; on Postgres 12+ this is metadata-only since the CHECK constraint already guarantees it.\\n\\nAvoid a single `ALTER TABLE ... ADD COLUMN col type NOT NULL DEFAULT x` - on older Postgres that rewrites every row under an ACCESS EXCLUSIVE lock for the duration.\",\n  \"provider_metadata\": {\n    \"finish_reason\": \"stop\"\n  },\n  \"requested_at\": \"2026-08-01T15:02:10.104Z\",\n  \"completed_at\": \"2026-08-01T15:02:13.926Z\"\n}"
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": 1,\n  \"request_id\": \"dfa22e5d7aaf42faa40edd8fb0863526\",\n  \"schema_version\": 1,\n  \"conversation_id\": 1,\n  \"call_type\": \"chat\",\n  \"model\": \"gpt-5.6-terra\",\n  \"provider\": \"openai\",\n  \"status\": \"success\",\n  \"latency_ms\": 3820,\n  \"input_tokens\": 612,\n  \"output_tokens\": 284,\n  \"error_type\": null,\n  \"error_message\": null,\n  \"time_to_first_token_ms\": null,\n  \"cost_usd\": \"0.004632\",\n  \"request_params\": {\n    \"max_tokens\": 1024,\n    \"temperature\": 1.0\n  },\n  \"config_hash\": \"9f3a7c1e2b8d4f60\",\n  \"input_messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a helpful, concise assistant.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"What's the safest way to add a NOT NULL column to a 50M-row Postgres table without locking it?\"\n    }\n  ],\n  \"output_text\": \"Add the column as nullable first, backfill in batches, then add the NOT NULL constraint as a NOT VALID check so existing rows aren't rewritten in one pass. Concretely:\\n\\n1. `ALTER TABLE ... ADD COLUMN col type` (nullable, no default) - this is instant, no table rewrite.\\n2. Backfill in small batched UPDATEs (5-10k rows at a time) so you don't hold a long-running transaction or bloat WAL.\\n3. Add `CHECK (col IS NOT NULL) NOT VALID`, which is instant.\\n4. `VALIDATE CONSTRAINT` in a separate transaction - this scans the table but only takes a lock that permits concurrent reads and writes.\\n5. Once validated, promote the column to NOT NULL; on Postgres 12+ this is metadata-only since the CHECK constraint already guarantees it.\\n\\nAvoid a single `ALTER TABLE ... ADD COLUMN col type NOT NULL DEFAULT x` - on older Postgres that rewrites every row under an ACCESS EXCLUSIVE lock for the duration.\",\n  \"provider_metadata\": {\n    \"finish_reason\": \"stop\"\n  },\n  \"requested_at\": \"2026-08-01T15:02:10.104000\",\n  \"completed_at\": \"2026-08-01T15:02:13.926000\",\n  \"created_at\": \"2026-08-01T15:02:14.012000\"\n}"
+            },
+            {
+              "name": "Created - title success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/ingest/logs",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "ingest",
+                    "logs"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"schema_version\": 1,\n  \"request_id\": \"ca5aa7ac312541128c03a22fd4e535e5\",\n  \"conversation_id\": 1,\n  \"call_type\": \"title\",\n  \"model\": \"gpt-5.6-luna\",\n  \"provider\": \"openai\",\n  \"status\": \"success\",\n  \"latency_ms\": 812,\n  \"input_tokens\": 145,\n  \"output_tokens\": 7,\n  \"time_to_first_token_ms\": null,\n  \"request_params\": {\n    \"max_tokens\": 20,\n    \"temperature\": 0.3\n  },\n  \"config_hash\": \"1c4e8a2f6b9d3057\",\n  \"input_messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Summarize the conversation in under 8 words as a title. No punctuation.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"User asked about adding a NOT NULL column to a 50M-row Postgres table without locking it; assistant explained the nullable-then-backfill-then-validate approach.\"\n    }\n  ],\n  \"output_text\": \"Safe NOT NULL column migration on Postgres\",\n  \"provider_metadata\": {\n    \"finish_reason\": \"stop\"\n  },\n  \"requested_at\": \"2026-08-01T15:02:14.201Z\",\n  \"completed_at\": \"2026-08-01T15:02:14.998Z\"\n}"
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": 2,\n  \"request_id\": \"ca5aa7ac312541128c03a22fd4e535e5\",\n  \"schema_version\": 1,\n  \"conversation_id\": 1,\n  \"call_type\": \"title\",\n  \"model\": \"gpt-5.6-luna\",\n  \"provider\": \"openai\",\n  \"status\": \"success\",\n  \"latency_ms\": 812,\n  \"input_tokens\": 145,\n  \"output_tokens\": 7,\n  \"error_type\": null,\n  \"error_message\": null,\n  \"time_to_first_token_ms\": null,\n  \"cost_usd\": \"0.000037\",\n  \"request_params\": {\n    \"max_tokens\": 20,\n    \"temperature\": 0.3\n  },\n  \"config_hash\": \"1c4e8a2f6b9d3057\",\n  \"input_messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Summarize the conversation in under 8 words as a title. No punctuation.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"User asked about adding a NOT NULL column to a 50M-row Postgres table without locking it; assistant explained the nullable-then-backfill-then-validate approach.\"\n    }\n  ],\n  \"output_text\": \"Safe NOT NULL column migration on Postgres\",\n  \"provider_metadata\": {\n    \"finish_reason\": \"stop\"\n  },\n  \"requested_at\": \"2026-08-01T15:02:14.201000\",\n  \"completed_at\": \"2026-08-01T15:02:14.998000\",\n  \"created_at\": \"2026-08-01T15:02:15.041000\"\n}"
+            },
+            {
+              "name": "Created - chat error status",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/ingest/logs",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "ingest",
+                    "logs"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"schema_version\": 1,\n  \"request_id\": \"22a29357b54846c792cbe7ed581bbc50\",\n  \"conversation_id\": 2,\n  \"call_type\": \"chat\",\n  \"model\": \"gpt-5.6-terra\",\n  \"provider\": \"openai\",\n  \"status\": \"error\",\n  \"latency_ms\": 30045,\n  \"input_tokens\": 398,\n  \"output_tokens\": null,\n  \"error_type\": \"provider_timeout\",\n  \"error_message\": \"Request to provider timed out after 30s waiting for a response.\",\n  \"time_to_first_token_ms\": null,\n  \"request_params\": {\n    \"max_tokens\": 1024,\n    \"temperature\": 1.0\n  },\n  \"config_hash\": \"9f3a7c1e2b8d4f60\",\n  \"input_messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a helpful, concise assistant.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Why is our nightly CI job flaking on the migration step about one run in five?\"\n    }\n  ],\n  \"output_text\": null,\n  \"provider_metadata\": null,\n  \"requested_at\": \"2026-08-01T16:40:02.553Z\",\n  \"completed_at\": \"2026-08-01T16:40:32.598Z\"\n}"
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": 3,\n  \"request_id\": \"22a29357b54846c792cbe7ed581bbc50\",\n  \"schema_version\": 1,\n  \"conversation_id\": 2,\n  \"call_type\": \"chat\",\n  \"model\": \"gpt-5.6-terra\",\n  \"provider\": \"openai\",\n  \"status\": \"error\",\n  \"latency_ms\": 30045,\n  \"input_tokens\": 398,\n  \"output_tokens\": null,\n  \"error_type\": \"provider_timeout\",\n  \"error_message\": \"Request to provider timed out after 30s waiting for a response.\",\n  \"time_to_first_token_ms\": null,\n  \"cost_usd\": null,\n  \"request_params\": {\n    \"max_tokens\": 1024,\n    \"temperature\": 1.0\n  },\n  \"config_hash\": \"9f3a7c1e2b8d4f60\",\n  \"input_messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a helpful, concise assistant.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Why is our nightly CI job flaking on the migration step about one run in five?\"\n    }\n  ],\n  \"output_text\": null,\n  \"provider_metadata\": null,\n  \"requested_at\": \"2026-08-01T16:40:02.553000\",\n  \"completed_at\": \"2026-08-01T16:40:32.598000\",\n  \"created_at\": \"2026-08-01T16:40:32.611000\"\n}"
+            },
+            {
+              "name": "Created - chat cancelled status",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/ingest/logs",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "ingest",
+                    "logs"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"schema_version\": 1,\n  \"request_id\": \"6e913b6dadc54e95a14d38a1ca2268a8\",\n  \"conversation_id\": 2,\n  \"call_type\": \"chat\",\n  \"model\": \"gpt-5.6-terra\",\n  \"provider\": \"openai\",\n  \"status\": \"cancelled\",\n  \"latency_ms\": 1230,\n  \"input_tokens\": 402,\n  \"output_tokens\": null,\n  \"time_to_first_token_ms\": null,\n  \"request_params\": {\n    \"max_tokens\": 1024,\n    \"temperature\": 1.0\n  },\n  \"config_hash\": \"9f3a7c1e2b8d4f60\",\n  \"input_messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a helpful, concise assistant.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Actually never mind, let me re-check the logs first before we dig into this.\"\n    }\n  ],\n  \"output_text\": null,\n  \"provider_metadata\": null,\n  \"requested_at\": \"2026-08-01T16:45:00.812Z\",\n  \"completed_at\": \"2026-08-01T16:45:02.042Z\"\n}"
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": 4,\n  \"request_id\": \"6e913b6dadc54e95a14d38a1ca2268a8\",\n  \"schema_version\": 1,\n  \"conversation_id\": 2,\n  \"call_type\": \"chat\",\n  \"model\": \"gpt-5.6-terra\",\n  \"provider\": \"openai\",\n  \"status\": \"cancelled\",\n  \"latency_ms\": 1230,\n  \"input_tokens\": 402,\n  \"output_tokens\": null,\n  \"error_type\": null,\n  \"error_message\": null,\n  \"time_to_first_token_ms\": null,\n  \"cost_usd\": null,\n  \"request_params\": {\n    \"max_tokens\": 1024,\n    \"temperature\": 1.0\n  },\n  \"config_hash\": \"9f3a7c1e2b8d4f60\",\n  \"input_messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a helpful, concise assistant.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Actually never mind, let me re-check the logs first before we dig into this.\"\n    }\n  ],\n  \"output_text\": null,\n  \"provider_metadata\": null,\n  \"requested_at\": \"2026-08-01T16:45:00.812000\",\n  \"completed_at\": \"2026-08-01T16:45:02.042000\",\n  \"created_at\": \"2026-08-01T16:45:02.058000\"\n}"
+            },
+            {
+              "name": "Conflict - duplicate request_id",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/ingest/logs",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "ingest",
+                    "logs"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"schema_version\": 1,\n  \"request_id\": \"dfa22e5d7aaf42faa40edd8fb0863526\",\n  \"conversation_id\": 1,\n  \"call_type\": \"chat\",\n  \"model\": \"gpt-5.6-terra\",\n  \"provider\": \"openai\",\n  \"status\": \"success\",\n  \"latency_ms\": 3820,\n  \"input_tokens\": 612,\n  \"output_tokens\": 284,\n  \"time_to_first_token_ms\": null,\n  \"request_params\": {\n    \"max_tokens\": 1024,\n    \"temperature\": 1.0\n  },\n  \"config_hash\": \"9f3a7c1e2b8d4f60\",\n  \"input_messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a helpful, concise assistant.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"What's the safest way to add a NOT NULL column to a 50M-row Postgres table without locking it?\"\n    }\n  ],\n  \"output_text\": \"Add the column as nullable first, backfill in batches, then add the NOT NULL constraint as a NOT VALID check so existing rows aren't rewritten in one pass. Concretely:\\n\\n1. `ALTER TABLE ... ADD COLUMN col type` (nullable, no default) - this is instant, no table rewrite.\\n2. Backfill in small batched UPDATEs (5-10k rows at a time) so you don't hold a long-running transaction or bloat WAL.\\n3. Add `CHECK (col IS NOT NULL) NOT VALID`, which is instant.\\n4. `VALIDATE CONSTRAINT` in a separate transaction - this scans the table but only takes a lock that permits concurrent reads and writes.\\n5. Once validated, promote the column to NOT NULL; on Postgres 12+ this is metadata-only since the CHECK constraint already guarantees it.\\n\\nAvoid a single `ALTER TABLE ... ADD COLUMN col type NOT NULL DEFAULT x` - on older Postgres that rewrites every row under an ACCESS EXCLUSIVE lock for the duration.\",\n  \"provider_metadata\": {\n    \"finish_reason\": \"stop\"\n  },\n  \"requested_at\": \"2026-08-01T15:02:10.104Z\",\n  \"completed_at\": \"2026-08-01T15:02:13.926Z\"\n}"
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": \"A conflicting record already exists.\"\n}"
+            },
+            {
+              "name": "Validation Error - unsupported schema_version",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/ingest/logs",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "ingest",
+                    "logs"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"schema_version\": 2,\n  \"request_id\": \"sample-unused-request-id\",\n  \"conversation_id\": 1,\n  \"call_type\": \"chat\",\n  \"model\": \"gpt-5.6-terra\",\n  \"provider\": \"openai\",\n  \"status\": \"success\",\n  \"latency_ms\": 3820,\n  \"input_tokens\": 612,\n  \"output_tokens\": 284,\n  \"time_to_first_token_ms\": null,\n  \"request_params\": {\n    \"max_tokens\": 1024,\n    \"temperature\": 1.0\n  },\n  \"config_hash\": \"9f3a7c1e2b8d4f60\",\n  \"input_messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a helpful, concise assistant.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"What's the safest way to add a NOT NULL column to a 50M-row Postgres table without locking it?\"\n    }\n  ],\n  \"output_text\": \"Add the column as nullable first, backfill in batches, then add the NOT NULL constraint as a NOT VALID check so existing rows aren't rewritten in one pass. Concretely:\\n\\n1. `ALTER TABLE ... ADD COLUMN col type` (nullable, no default) - this is instant, no table rewrite.\\n2. Backfill in small batched UPDATEs (5-10k rows at a time) so you don't hold a long-running transaction or bloat WAL.\\n3. Add `CHECK (col IS NOT NULL) NOT VALID`, which is instant.\\n4. `VALIDATE CONSTRAINT` in a separate transaction - this scans the table but only takes a lock that permits concurrent reads and writes.\\n5. Once validated, promote the column to NOT NULL; on Postgres 12+ this is metadata-only since the CHECK constraint already guarantees it.\\n\\nAvoid a single `ALTER TABLE ... ADD COLUMN col type NOT NULL DEFAULT x` - on older Postgres that rewrites every row under an ACCESS EXCLUSIVE lock for the duration.\",\n  \"provider_metadata\": {\n    \"finish_reason\": \"stop\"\n  },\n  \"requested_at\": \"2026-08-01T15:02:10.104Z\",\n  \"completed_at\": \"2026-08-01T15:02:13.926Z\"\n}"
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": [\n    {\n      \"type\": \"literal_error\",\n      \"loc\": [\n        \"body\",\n        \"schema_version\"\n      ],\n      \"msg\": \"Input should be 1\",\n      \"input\": 2,\n      \"ctx\": {\n        \"expected\": \"1\"\n      }\n    }\n  ]\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Logs",
+      "item": [
+        {
+          "name": "List Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/logs?limit=20&offset=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "logs"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "OK - all logs (newest first)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs?limit=20&offset=0",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs"
+                  ],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    },
+                    {
+                      "key": "offset",
+                      "value": "0"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"items\": [\n    {\n      \"id\": 4,\n      \"request_id\": \"6e913b6dadc54e95a14d38a1ca2268a8\",\n      \"conversation_id\": 2,\n      \"call_type\": \"chat\",\n      \"model\": \"gpt-5.6-terra\",\n      \"provider\": \"openai\",\n      \"status\": \"cancelled\",\n      \"latency_ms\": 1230,\n      \"input_tokens\": 402,\n      \"output_tokens\": null,\n      \"time_to_first_token_ms\": null,\n      \"cost_usd\": null,\n      \"error_type\": null,\n      \"config_hash\": \"9f3a7c1e2b8d4f60\",\n      \"requested_at\": \"2026-08-01T16:45:00.812000\",\n      \"completed_at\": \"2026-08-01T16:45:02.042000\",\n      \"created_at\": \"2026-08-01T16:45:02.058000\",\n      \"input_preview\": \"Actually never mind, let me re-check the logs first before we dig into this.\",\n      \"output_preview\": null\n    },\n    {\n      \"id\": 3,\n      \"request_id\": \"22a29357b54846c792cbe7ed581bbc50\",\n      \"conversation_id\": 2,\n      \"call_type\": \"chat\",\n      \"model\": \"gpt-5.6-terra\",\n      \"provider\": \"openai\",\n      \"status\": \"error\",\n      \"latency_ms\": 30045,\n      \"input_tokens\": 398,\n      \"output_tokens\": null,\n      \"time_to_first_token_ms\": null,\n      \"cost_usd\": null,\n      \"error_type\": \"provider_timeout\",\n      \"config_hash\": \"9f3a7c1e2b8d4f60\",\n      \"requested_at\": \"2026-08-01T16:40:02.553000\",\n      \"completed_at\": \"2026-08-01T16:40:32.598000\",\n      \"created_at\": \"2026-08-01T16:40:32.611000\",\n      \"input_preview\": \"Why is our nightly CI job flaking on the migration step about one run in five?\",\n      \"output_preview\": null\n    },\n    {\n      \"id\": 2,\n      \"request_id\": \"ca5aa7ac312541128c03a22fd4e535e5\",\n      \"conversation_id\": 1,\n      \"call_type\": \"title\",\n      \"model\": \"gpt-5.6-luna\",\n      \"provider\": \"openai\",\n      \"status\": \"success\",\n      \"latency_ms\": 812,\n      \"input_tokens\": 145,\n      \"output_tokens\": 7,\n      \"time_to_first_token_ms\": null,\n      \"cost_usd\": \"0.000037\",\n      \"error_type\": null,\n      \"config_hash\": \"1c4e8a2f6b9d3057\",\n      \"requested_at\": \"2026-08-01T15:02:14.201000\",\n      \"completed_at\": \"2026-08-01T15:02:14.998000\",\n      \"created_at\": \"2026-08-01T15:02:15.041000\",\n      \"input_preview\": \"User asked about adding a NOT NULL column to a 50M-row Postgres table without locking it; assistant explained the nullable-then-backfill-then-validate approach.\",\n      \"output_preview\": \"Safe NOT NULL column migration on Postgres\"\n    },\n    {\n      \"id\": 1,\n      \"request_id\": \"dfa22e5d7aaf42faa40edd8fb0863526\",\n      \"conversation_id\": 1,\n      \"call_type\": \"chat\",\n      \"model\": \"gpt-5.6-terra\",\n      \"provider\": \"openai\",\n      \"status\": \"success\",\n      \"latency_ms\": 3820,\n      \"input_tokens\": 612,\n      \"output_tokens\": 284,\n      \"time_to_first_token_ms\": null,\n      \"cost_usd\": \"0.004632\",\n      \"error_type\": null,\n      \"config_hash\": \"9f3a7c1e2b8d4f60\",\n      \"requested_at\": \"2026-08-01T15:02:10.104000\",\n      \"completed_at\": \"2026-08-01T15:02:13.926000\",\n      \"created_at\": \"2026-08-01T15:02:14.012000\",\n      \"input_preview\": \"What's the safest way to add a NOT NULL column to a 50M-row Postgres table without locking it?\",\n      \"output_preview\": \"Add the column as nullable first, backfill in batches, then add the NOT NULL constraint as a NOT VALID check so existing rows aren't rewritten in one pass. Concretely:\\n\\n1. `ALTER TABLE ... ADD COLUMN col type` (nullable, no default) - this is instant, no table rewrite.\\n2. Backfill in small batched UPDATEs (5-10k rows at a time) so you don't hold a long-running transaction or bloat WAL.\\n3. Add `CHECK (col IS NOT NULL) NOT VALID`, which is instant.\\n4. `VALIDATE CONSTRAINT` in a separate transactio\"\n    }\n  ],\n  \"total\": 4,\n  \"limit\": 20,\n  \"offset\": 0\n}"
+            },
+            {
+              "name": "OK - filtered by conversation_id",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs?conversation_id=2",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs"
+                  ],
+                  "query": [
+                    {
+                      "key": "conversation_id",
+                      "value": "2"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"items\": [\n    {\n      \"id\": 4,\n      \"request_id\": \"6e913b6dadc54e95a14d38a1ca2268a8\",\n      \"conversation_id\": 2,\n      \"call_type\": \"chat\",\n      \"model\": \"gpt-5.6-terra\",\n      \"provider\": \"openai\",\n      \"status\": \"cancelled\",\n      \"latency_ms\": 1230,\n      \"input_tokens\": 402,\n      \"output_tokens\": null,\n      \"time_to_first_token_ms\": null,\n      \"cost_usd\": null,\n      \"error_type\": null,\n      \"config_hash\": \"9f3a7c1e2b8d4f60\",\n      \"requested_at\": \"2026-08-01T16:45:00.812000\",\n      \"completed_at\": \"2026-08-01T16:45:02.042000\",\n      \"created_at\": \"2026-08-01T16:45:02.058000\",\n      \"input_preview\": \"Actually never mind, let me re-check the logs first before we dig into this.\",\n      \"output_preview\": null\n    },\n    {\n      \"id\": 3,\n      \"request_id\": \"22a29357b54846c792cbe7ed581bbc50\",\n      \"conversation_id\": 2,\n      \"call_type\": \"chat\",\n      \"model\": \"gpt-5.6-terra\",\n      \"provider\": \"openai\",\n      \"status\": \"error\",\n      \"latency_ms\": 30045,\n      \"input_tokens\": 398,\n      \"output_tokens\": null,\n      \"time_to_first_token_ms\": null,\n      \"cost_usd\": null,\n      \"error_type\": \"provider_timeout\",\n      \"config_hash\": \"9f3a7c1e2b8d4f60\",\n      \"requested_at\": \"2026-08-01T16:40:02.553000\",\n      \"completed_at\": \"2026-08-01T16:40:32.598000\",\n      \"created_at\": \"2026-08-01T16:40:32.611000\",\n      \"input_preview\": \"Why is our nightly CI job flaking on the migration step about one run in five?\",\n      \"output_preview\": null\n    }\n  ],\n  \"total\": 2,\n  \"limit\": 20,\n  \"offset\": 0\n}"
+            },
+            {
+              "name": "OK - filtered by status=error",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs?status=error",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs"
+                  ],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "error"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"items\": [\n    {\n      \"id\": 3,\n      \"request_id\": \"22a29357b54846c792cbe7ed581bbc50\",\n      \"conversation_id\": 2,\n      \"call_type\": \"chat\",\n      \"model\": \"gpt-5.6-terra\",\n      \"provider\": \"openai\",\n      \"status\": \"error\",\n      \"latency_ms\": 30045,\n      \"input_tokens\": 398,\n      \"output_tokens\": null,\n      \"time_to_first_token_ms\": null,\n      \"cost_usd\": null,\n      \"error_type\": \"provider_timeout\",\n      \"config_hash\": \"9f3a7c1e2b8d4f60\",\n      \"requested_at\": \"2026-08-01T16:40:02.553000\",\n      \"completed_at\": \"2026-08-01T16:40:32.598000\",\n      \"created_at\": \"2026-08-01T16:40:32.611000\",\n      \"input_preview\": \"Why is our nightly CI job flaking on the migration step about one run in five?\",\n      \"output_preview\": null\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 20,\n  \"offset\": 0\n}"
+            },
+            {
+              "name": "OK - filtered by call_type=title",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs?call_type=title",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs"
+                  ],
+                  "query": [
+                    {
+                      "key": "call_type",
+                      "value": "title"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"items\": [\n    {\n      \"id\": 2,\n      \"request_id\": \"ca5aa7ac312541128c03a22fd4e535e5\",\n      \"conversation_id\": 1,\n      \"call_type\": \"title\",\n      \"model\": \"gpt-5.6-luna\",\n      \"provider\": \"openai\",\n      \"status\": \"success\",\n      \"latency_ms\": 812,\n      \"input_tokens\": 145,\n      \"output_tokens\": 7,\n      \"time_to_first_token_ms\": null,\n      \"cost_usd\": \"0.000037\",\n      \"error_type\": null,\n      \"config_hash\": \"1c4e8a2f6b9d3057\",\n      \"requested_at\": \"2026-08-01T15:02:14.201000\",\n      \"completed_at\": \"2026-08-01T15:02:14.998000\",\n      \"created_at\": \"2026-08-01T15:02:15.041000\",\n      \"input_preview\": \"User asked about adding a NOT NULL column to a 50M-row Postgres table without locking it; assistant explained the nullable-then-backfill-then-validate approach.\",\n      \"output_preview\": \"Safe NOT NULL column migration on Postgres\"\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 20,\n  \"offset\": 0\n}"
+            },
+            {
+              "name": "OK - combined filters (conversation_id AND status)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs?conversation_id=1&status=success",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs"
+                  ],
+                  "query": [
+                    {
+                      "key": "conversation_id",
+                      "value": "1"
+                    },
+                    {
+                      "key": "status",
+                      "value": "success"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"items\": [\n    {\n      \"id\": 2,\n      \"request_id\": \"ca5aa7ac312541128c03a22fd4e535e5\",\n      \"conversation_id\": 1,\n      \"call_type\": \"title\",\n      \"model\": \"gpt-5.6-luna\",\n      \"provider\": \"openai\",\n      \"status\": \"success\",\n      \"latency_ms\": 812,\n      \"input_tokens\": 145,\n      \"output_tokens\": 7,\n      \"time_to_first_token_ms\": null,\n      \"cost_usd\": \"0.000037\",\n      \"error_type\": null,\n      \"config_hash\": \"1c4e8a2f6b9d3057\",\n      \"requested_at\": \"2026-08-01T15:02:14.201000\",\n      \"completed_at\": \"2026-08-01T15:02:14.998000\",\n      \"created_at\": \"2026-08-01T15:02:15.041000\",\n      \"input_preview\": \"User asked about adding a NOT NULL column to a 50M-row Postgres table without locking it; assistant explained the nullable-then-backfill-then-validate approach.\",\n      \"output_preview\": \"Safe NOT NULL column migration on Postgres\"\n    },\n    {\n      \"id\": 1,\n      \"request_id\": \"dfa22e5d7aaf42faa40edd8fb0863526\",\n      \"conversation_id\": 1,\n      \"call_type\": \"chat\",\n      \"model\": \"gpt-5.6-terra\",\n      \"provider\": \"openai\",\n      \"status\": \"success\",\n      \"latency_ms\": 3820,\n      \"input_tokens\": 612,\n      \"output_tokens\": 284,\n      \"time_to_first_token_ms\": null,\n      \"cost_usd\": \"0.004632\",\n      \"error_type\": null,\n      \"config_hash\": \"9f3a7c1e2b8d4f60\",\n      \"requested_at\": \"2026-08-01T15:02:10.104000\",\n      \"completed_at\": \"2026-08-01T15:02:13.926000\",\n      \"created_at\": \"2026-08-01T15:02:14.012000\",\n      \"input_preview\": \"What's the safest way to add a NOT NULL column to a 50M-row Postgres table without locking it?\",\n      \"output_preview\": \"Add the column as nullable first, backfill in batches, then add the NOT NULL constraint as a NOT VALID check so existing rows aren't rewritten in one pass. Concretely:\\n\\n1. `ALTER TABLE ... ADD COLUMN col type` (nullable, no default) - this is instant, no table rewrite.\\n2. Backfill in small batched UPDATEs (5-10k rows at a time) so you don't hold a long-running transaction or bloat WAL.\\n3. Add `CHECK (col IS NOT NULL) NOT VALID`, which is instant.\\n4. `VALIDATE CONSTRAINT` in a separate transactio\"\n    }\n  ],\n  \"total\": 2,\n  \"limit\": 20,\n  \"offset\": 0\n}"
+            },
+            {
+              "name": "OK - no match (conversation_id with no logs) - not a 404",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs?conversation_id=999999",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs"
+                  ],
+                  "query": [
+                    {
+                      "key": "conversation_id",
+                      "value": "999999"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"items\": [],\n  \"total\": 0,\n  \"limit\": 20,\n  \"offset\": 0\n}"
+            },
+            {
+              "name": "OK - pagination (limit=2&offset=1)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs?limit=2&offset=1",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs"
+                  ],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "2"
+                    },
+                    {
+                      "key": "offset",
+                      "value": "1"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"items\": [\n    {\n      \"id\": 3,\n      \"request_id\": \"22a29357b54846c792cbe7ed581bbc50\",\n      \"conversation_id\": 2,\n      \"call_type\": \"chat\",\n      \"model\": \"gpt-5.6-terra\",\n      \"provider\": \"openai\",\n      \"status\": \"error\",\n      \"latency_ms\": 30045,\n      \"input_tokens\": 398,\n      \"output_tokens\": null,\n      \"time_to_first_token_ms\": null,\n      \"cost_usd\": null,\n      \"error_type\": \"provider_timeout\",\n      \"config_hash\": \"9f3a7c1e2b8d4f60\",\n      \"requested_at\": \"2026-08-01T16:40:02.553000\",\n      \"completed_at\": \"2026-08-01T16:40:32.598000\",\n      \"created_at\": \"2026-08-01T16:40:32.611000\",\n      \"input_preview\": \"Why is our nightly CI job flaking on the migration step about one run in five?\",\n      \"output_preview\": null\n    },\n    {\n      \"id\": 2,\n      \"request_id\": \"ca5aa7ac312541128c03a22fd4e535e5\",\n      \"conversation_id\": 1,\n      \"call_type\": \"title\",\n      \"model\": \"gpt-5.6-luna\",\n      \"provider\": \"openai\",\n      \"status\": \"success\",\n      \"latency_ms\": 812,\n      \"input_tokens\": 145,\n      \"output_tokens\": 7,\n      \"time_to_first_token_ms\": null,\n      \"cost_usd\": \"0.000037\",\n      \"error_type\": null,\n      \"config_hash\": \"1c4e8a2f6b9d3057\",\n      \"requested_at\": \"2026-08-01T15:02:14.201000\",\n      \"completed_at\": \"2026-08-01T15:02:14.998000\",\n      \"created_at\": \"2026-08-01T15:02:15.041000\",\n      \"input_preview\": \"User asked about adding a NOT NULL column to a 50M-row Postgres table without locking it; assistant explained the nullable-then-backfill-then-validate approach.\",\n      \"output_preview\": \"Safe NOT NULL column migration on Postgres\"\n    }\n  ],\n  \"total\": 4,\n  \"limit\": 2,\n  \"offset\": 1\n}"
+            },
+            {
+              "name": "Validation Error - unknown status value",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs?status=pending",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs"
+                  ],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "pending"
+                    }
+                  ]
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": [\n    {\n      \"type\": \"enum\",\n      \"loc\": [\n        \"query\",\n        \"status\"\n      ],\n      \"msg\": \"Input should be 'success', 'error' or 'cancelled'\",\n      \"input\": \"pending\",\n      \"ctx\": {\n        \"expected\": \"'success', 'error' or 'cancelled'\"\n      }\n    }\n  ]\n}"
+            },
+            {
+              "name": "Validation Error - unknown call_type value",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs?call_type=summarize",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs"
+                  ],
+                  "query": [
+                    {
+                      "key": "call_type",
+                      "value": "summarize"
+                    }
+                  ]
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": [\n    {\n      \"type\": \"enum\",\n      \"loc\": [\n        \"query\",\n        \"call_type\"\n      ],\n      \"msg\": \"Input should be 'chat' or 'title'\",\n      \"input\": \"summarize\",\n      \"ctx\": {\n        \"expected\": \"'chat' or 'title'\"\n      }\n    }\n  ]\n}"
+            },
+            {
+              "name": "Validation Error - limit out of range",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs?limit=101",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs"
+                  ],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "101"
+                    }
+                  ]
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": [\n    {\n      \"type\": \"less_than_equal\",\n      \"loc\": [\n        \"query\",\n        \"limit\"\n      ],\n      \"msg\": \"Input should be less than or equal to 100\",\n      \"input\": \"101\",\n      \"ctx\": {\n        \"le\": 100\n      }\n    }\n  ]\n}"
+            },
+            {
+              "name": "Validation Error - offset negative",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs?offset=-1",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs"
+                  ],
+                  "query": [
+                    {
+                      "key": "offset",
+                      "value": "-1"
+                    }
+                  ]
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": [\n    {\n      \"type\": \"greater_than_equal\",\n      \"loc\": [\n        \"query\",\n        \"offset\"\n      ],\n      \"msg\": \"Input should be greater than or equal to 0\",\n      \"input\": \"-1\",\n      \"ctx\": {\n        \"ge\": 0\n      }\n    }\n  ]\n}"
+            },
+            {
+              "name": "Validation Error - conversation_id not an integer",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs?conversation_id=abc",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs"
+                  ],
+                  "query": [
+                    {
+                      "key": "conversation_id",
+                      "value": "abc"
+                    }
+                  ]
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": [\n    {\n      \"type\": \"int_parsing\",\n      \"loc\": [\n        \"query\",\n        \"conversation_id\"\n      ],\n      \"msg\": \"Input should be a valid integer, unable to parse string as an integer\",\n      \"input\": \"abc\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Log by Request Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/logs/:request_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "logs",
+                ":request_id"
+              ],
+              "variable": [
+                {
+                  "key": "request_id",
+                  "value": "{{logRequestId}}"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs/dfa22e5d7aaf42faa40edd8fb0863526",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs",
+                    "dfa22e5d7aaf42faa40edd8fb0863526"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": 1,\n  \"request_id\": \"dfa22e5d7aaf42faa40edd8fb0863526\",\n  \"schema_version\": 1,\n  \"conversation_id\": 1,\n  \"call_type\": \"chat\",\n  \"model\": \"gpt-5.6-terra\",\n  \"provider\": \"openai\",\n  \"status\": \"success\",\n  \"latency_ms\": 3820,\n  \"input_tokens\": 612,\n  \"output_tokens\": 284,\n  \"error_type\": null,\n  \"error_message\": null,\n  \"time_to_first_token_ms\": null,\n  \"cost_usd\": \"0.004632\",\n  \"request_params\": {\n    \"max_tokens\": 1024,\n    \"temperature\": 1.0\n  },\n  \"config_hash\": \"9f3a7c1e2b8d4f60\",\n  \"input_messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a helpful, concise assistant.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"What's the safest way to add a NOT NULL column to a 50M-row Postgres table without locking it?\"\n    }\n  ],\n  \"output_text\": \"Add the column as nullable first, backfill in batches, then add the NOT NULL constraint as a NOT VALID check so existing rows aren't rewritten in one pass. Concretely:\\n\\n1. `ALTER TABLE ... ADD COLUMN col type` (nullable, no default) - this is instant, no table rewrite.\\n2. Backfill in small batched UPDATEs (5-10k rows at a time) so you don't hold a long-running transaction or bloat WAL.\\n3. Add `CHECK (col IS NOT NULL) NOT VALID`, which is instant.\\n4. `VALIDATE CONSTRAINT` in a separate transaction - this scans the table but only takes a lock that permits concurrent reads and writes.\\n5. Once validated, promote the column to NOT NULL; on Postgres 12+ this is metadata-only since the CHECK constraint already guarantees it.\\n\\nAvoid a single `ALTER TABLE ... ADD COLUMN col type NOT NULL DEFAULT x` - on older Postgres that rewrites every row under an ACCESS EXCLUSIVE lock for the duration.\",\n  \"provider_metadata\": {\n    \"finish_reason\": \"stop\"\n  },\n  \"requested_at\": \"2026-08-01T15:02:10.104000\",\n  \"completed_at\": \"2026-08-01T15:02:13.926000\",\n  \"created_at\": \"2026-08-01T15:02:14.012000\"\n}"
+            },
+            {
+              "name": "Not Found - unknown request_id",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs/does-not-exist-abc123",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs",
+                    "does-not-exist-abc123"
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": \"Inference log not found\"\n}"
+            },
+            {
+              "name": "Not Found - numeric id is a primary key, not a request_id",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs/4",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs",
+                    "4"
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": \"Inference log not found\"\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
