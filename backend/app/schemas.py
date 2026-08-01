@@ -7,6 +7,7 @@ Every endpoint should declare a `response_model` and, for POST/PUT/PATCH,
 a request body schema — don't accept or return raw dicts.
 """
 
+import math
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -237,3 +238,106 @@ class InferenceLogRead(BaseModel):
     requested_at: datetime
     completed_at: datetime | None
     created_at: datetime
+
+
+class BucketSize(StrEnum):
+    MINUTE = "minute"
+    HOUR = "hour"
+    DAY = "day"
+
+
+class LogGroupBy(StrEnum):
+    NONE = "none"
+    STATUS = "status"
+    MODEL = "model"
+    PROVIDER = "provider"
+    CALL_TYPE = "call_type"
+
+
+def percentile(values: list[int], p: float) -> int | None:
+    """Nearest-rank percentile. `values` must be sorted ascending.
+
+    Nearest-rank (not linear interpolation) so the result is always a value
+    that actually occurred — see spec 014's "Percentile definition".
+    """
+    if not values:
+        return None
+    k = math.ceil(p / 100 * len(values)) - 1
+    return values[min(max(k, 0), len(values) - 1)]
+
+
+class TimeWindow(BaseModel):
+    from_: datetime = Field(alias="from")
+    to: datetime
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class LatencyStats(BaseModel):
+    p50_ms: int
+    p95_ms: int
+    p99_ms: int
+    avg_ms: int
+    max_ms: int
+
+
+class TokenStats(BaseModel):
+    input: int
+    output: int
+    total: int
+
+
+class LogGroupStat(BaseModel):
+    key: str
+    is_other: bool = False
+    calls: int
+    error_count: int
+    error_rate: float
+    latency_p95_ms: int | None
+    input_tokens: int
+    output_tokens: int
+    cost_usd: Decimal | None
+
+
+class LogStatsRead(BaseModel):
+    window: TimeWindow
+    total_calls: int
+    success_count: int
+    error_count: int
+    cancelled_count: int
+    error_rate: float
+    latency: LatencyStats | None
+    ttft: LatencyStats | None
+    tokens: TokenStats
+    cost_usd: Decimal | None
+    cost_coverage: float
+    by_model: list[LogGroupStat]
+    by_provider: list[LogGroupStat]
+    by_call_type: list[LogGroupStat]
+    by_status: list[LogGroupStat]
+
+
+class TimeseriesPoint(BaseModel):
+    t: datetime
+    calls: int
+    error_count: int
+    cancelled_count: int
+    latency_p50_ms: int | None
+    latency_p95_ms: int | None
+    input_tokens: int
+    output_tokens: int
+    cost_usd: Decimal | None
+
+
+class TimeseriesSeries(BaseModel):
+    key: str
+    is_other: bool = False
+    points: list[TimeseriesPoint]
+
+
+class LogTimeseriesRead(BaseModel):
+    window: TimeWindow
+    bucket: BucketSize
+    group_by: LogGroupBy
+    bucket_count: int
+    series: list[TimeseriesSeries]

@@ -1,7 +1,10 @@
 from collections.abc import Generator
+from datetime import UTC, datetime
 
 from sqlalchemy import create_engine
+from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.types import DateTime, TypeDecorator
 
 from app.core.config import settings
 
@@ -16,6 +19,24 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 class Base(DeclarativeBase):
     pass
+
+
+class UtcDateTime(TypeDecorator[datetime]):
+    """DateTime(timezone=True) that survives SQLite, which stores the value
+    as naive TEXT and silently drops the +00:00 offset on read. Every
+    timestamp in this app is written as UTC (see model defaults), so a
+    naive value read back is coerced to UTC rather than left ambiguous.
+    """
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_result_value(self, value: datetime | None, dialect: Dialect) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
 
 def get_db() -> Generator[Session, None, None]:

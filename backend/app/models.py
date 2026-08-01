@@ -3,11 +3,11 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, func
+from sqlalchemy import JSON, ForeignKey, Index, Integer, Numeric, String, Text, func
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db import Base
+from app.db import Base, UtcDateTime
 
 
 class ConversationStatus(StrEnum):
@@ -39,14 +39,14 @@ class Conversation(Base):
     )
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UtcDateTime(),
         nullable=False,
         default=lambda: datetime.now(UTC),
         server_default=func.now(),
     )
 
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UtcDateTime(),
         nullable=False,
         default=lambda: datetime.now(UTC),
         server_default=func.now(),
@@ -88,7 +88,7 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UtcDateTime(),
         nullable=False,
         default=lambda: datetime.now(UTC),
         server_default=func.now(),
@@ -149,10 +149,10 @@ class InferenceLog(Base):
     # second-granular and drops tzinfo, which would both skew browser-rendered
     # times and make ordering ties routine (a chat log and its title log land
     # in the same second).
-    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+        UtcDateTime(), nullable=False, default=lambda: datetime.now(UTC)
     )
 
     __table_args__ = (
