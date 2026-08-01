@@ -7,7 +7,7 @@ from app.core.config import settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import setup_logging
 from app.core.observability import close_observability, init_observability
-from app.routers import conversations, ingest, messages
+from app.routers import conversations, ingest, logs, messages
 from app.schemas import HealthResponse
 
 
@@ -40,3 +40,4 @@ def health() -> HealthResponse:
 app.include_router(conversations.router)
 app.include_router(messages.router)
 app.include_router(ingest.router)
+app.include_router(logs.router)

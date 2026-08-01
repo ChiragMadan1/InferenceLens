@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models import ConversationStatus, MessageRole
+from app.models import ConversationStatus, InferenceLog, MessageRole
 
 
 class HealthResponse(BaseModel):
@@ -129,6 +129,82 @@ class InferenceLogEventIn(BaseModel):
         if v is None:
             return None
         return v[:2000]
+
+
+PREVIEW_MAX_CHARS = 500
+
+
+def _input_preview(input_messages: list[dict[str, Any]] | None) -> str | None:
+    """Text of the LAST user message in the rendered prompt, truncated.
+
+    Returns None when there is no user-role entry, or when its content is not
+    a plain string (a future multi-part content block, for example) — a preview
+    is a convenience, never a reason to fail a list request.
+    """
+    for entry in reversed(input_messages or []):
+        if entry.get("role") == "user":
+            content = entry.get("content")
+            if isinstance(content, str):
+                return content[:PREVIEW_MAX_CHARS]
+            return None
+    return None
+
+
+def _output_preview(output_text: str | None) -> str | None:
+    if output_text is None:
+        return None
+    return output_text[:PREVIEW_MAX_CHARS]
+
+
+class InferenceLogSummary(BaseModel):
+    """List-view shape for an inference log. Not `from_attributes`-constructible
+    on its own since input_preview/output_preview are computed, not columns —
+    build it via `from_log`.
+    """
+
+    id: int
+    request_id: str
+    conversation_id: int | None
+    call_type: CallType
+    model: str
+    provider: str
+    status: LogStatus
+    latency_ms: int
+    input_tokens: int | None
+    output_tokens: int | None
+    time_to_first_token_ms: int | None
+    cost_usd: Decimal | None
+    error_type: str | None
+    config_hash: str | None
+    requested_at: datetime
+    completed_at: datetime | None
+    created_at: datetime
+    input_preview: str | None
+    output_preview: str | None
+
+    @classmethod
+    def from_log(cls, log: InferenceLog) -> "InferenceLogSummary":
+        return cls(
+            id=log.id,
+            request_id=log.request_id,
+            conversation_id=log.conversation_id,
+            call_type=log.call_type,
+            model=log.model,
+            provider=log.provider,
+            status=log.status,
+            latency_ms=log.latency_ms,
+            input_tokens=log.input_tokens,
+            output_tokens=log.output_tokens,
+            time_to_first_token_ms=log.time_to_first_token_ms,
+            cost_usd=log.cost_usd,
+            error_type=log.error_type,
+            config_hash=log.config_hash,
+            requested_at=log.requested_at,
+            completed_at=log.completed_at,
+            created_at=log.created_at,
+            input_preview=_input_preview(log.input_messages),
+            output_preview=_output_preview(log.output_text),
+        )
 
 
 class InferenceLogRead(BaseModel):
