@@ -6,7 +6,7 @@ Depends on: 006 (logging SDK / the instrumented provider), and therefore transit
 ## Problem statement
 
 Every conversation is created with the title `"New conversation"` (spec 001),
-so the conversation list (spec 010) is a wall of identical rows and a user
+so the conversation list (spec 009) is a wall of identical rows and a user
 cannot tell their chats apart. After the first exchange the system has enough
 context to name the conversation itself.
 
@@ -83,7 +83,7 @@ degrades to "the title stays `New conversation`".
   only after the `ChatTurnRead` response body has been handed to the client.
 - **No realtime.** No websockets, no SSE, no polling, no auto-refresh to
   "push" the new title — CLAUDE.md's out-of-scope default. The title appears
-  on the next list refresh, which is a user action (spec 010's refresh /
+  on the next list refresh, which is a user action (spec 009's refresh /
   navigation). Do not add a poll loop to the frontend for this.
 - **Cost.** One extra provider call per conversation (not per turn), on the
   cheap model, capped at 32 output tokens.
@@ -253,11 +253,8 @@ Design-doc edge cases by number, plus the ones specific to this feature.
 |---|------|-----------------|
 | **12** | Titling call fails or is slow (provider error, 5xx, rate limit, `PROVIDER_TIMEOUT_SECONDS` exceeded) | The SDK emits a `status="error"`, `call_type="title"` log with `error_type`/`error_message` and null tokens; `generate_title` catches `ProviderError`, logs at ERROR with `conversation_id`, returns. Title stays `"New conversation"`. **The chat turn already returned 200 and is untouched.** |
 | **13** | Auto-title completes and overwrites something | v1 has no rename endpoint, so the only value it can overwrite is the default — and the conditional UPDATE (FR7) guarantees that: if `title != "New conversation"` at write time, 0 rows update and the task logs "title already set, skipping". Auto-title simply wins on a fresh conversation. When a rename feature lands, this UPDATE already protects a user-chosen title with no change. |
-| **3** | Second message sent while one is in flight | Rejected with 409 by spec 009 before any message is stored, so a conversation cannot produce two concurrent "first assistant messages". 008 relies on this only as belt-and-braces — FR7's conditional UPDATE is the actual guarantee, and it holds even with 009 absent. |
-| **4** | Cancel with nothing in flight | Not applicable to titling (409, spec 009). No titling interaction. |
-| **5** | Cancel races completion | If the assistant message was stored, the turn completed normally and titling is scheduled as usual; the later 409 from cancel does not un-schedule or affect it. |
+| **3** | Second message sent while one is in flight | There is no concurrent-send guard anywhere in this project — both proceed independently (design doc edge case 3), so a conversation could in principle produce two concurrent "first assistant messages". FR7's conditional UPDATE is what actually prevents duplicate titling in that case, not a 409. |
 | — | **First turn errored** (provider 502) | No assistant message was stored, so FR2's assistant-count check is 0 and **nothing is scheduled**. The next successful turn *is* the first assistant message, and titling fires then. This is correct and intentional. |
-| — | **First turn cancelled** (spec 009) | Same as above: no assistant message stored → no titling. The user's retry produces the first assistant message and titles then. |
 | — | Model returns empty / whitespace-only / all-punctuation output | Sanitization yields `""` → treated as a failure: title unchanged, ERROR log line. Note the inference log itself is `status="success"` (the provider call *did* succeed) — the sanitizer rejection is an app-level log line, not a fake error status. State this in the code comment; do not fabricate an error status for a successful call. |
 | — | Model returns a long paragraph | Whitespace-collapsed and truncated to at most 40 chars, appending a single ellipsis character when truncated. No word-boundary logic. |
 | — | Model wraps the title in quotes or smart quotes | Stripped by the quote rule; nested/doubled quotes handled by the bounded 3-iteration loop. |

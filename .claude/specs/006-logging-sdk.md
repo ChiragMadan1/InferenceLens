@@ -71,8 +71,8 @@ Two things make this work:
   adds a mapping; it changes no SDK code.
 - **The wrapper satisfies the same interface it wraps.** `LoggingChatProvider`
   *is* a `ChatProvider`, so it substitutes anywhere one is expected —
-  `Depends(get_chat_provider)`, spec 008's titling task, spec 009's
-  `asyncio.create_task`, spec 012's streaming — with no call-site change.
+  `Depends(get_chat_provider)`, spec 008's titling task, spec 012's
+  streaming — with no call-site change.
 
 ## Functional requirements
 
@@ -634,7 +634,7 @@ router imports nothing from `app.logging_sdk` and injects no publisher.
   `models`, no `schemas`, no `providers`. Configuration is constructor
   arguments; provider knowledge is the `InstrumentedProvider` ABC.
 - **`CallRecorder.invoke` is the single emission point.** No other module
-  constructs an `InferenceLogEvent` or calls `publisher.publish`. Specs 008, 009
+  constructs an `InferenceLogEvent` or calls `publisher.publish`. Specs 008
   and 012 route through the decorated provider; they do not duplicate it.
 - **The raw adapter is not reachable.** `OpenAIProvider` leaves
   `app.providers.__all__`. Nothing outside `app/providers/__init__.py` may
@@ -664,7 +664,7 @@ router imports nothing from `app.logging_sdk` and injects no publisher.
 | 3 | **Ingestion returns 422** | `ERROR` log with the status and response body. This means the producer and consumer contracts have drifted — a bug to fix, not a transient failure. No retry. |
 | 4 | **Ingestion returns 500 / 503** | `ERROR` log with status and body. No retry. Event lost. |
 | 5 | **Provider raises `ProviderError`** | `describe_failure` classifies it; event emitted with `status=error`, `error_type`/`error_message` from the exception, **null tokens, null `output_text`, null `cost_usd`**. The exception re-raises unchanged; spec 004's handler still returns 502; the user message stays stored so the user can retry. |
-| 6 | **Provider call is cancelled** (`asyncio.CancelledError`) | Event emitted with `status=cancelled`, null tokens, null `output_text`, no error fields. `describe_failure` is **not** called. `CancelledError` is re-raised — never swallowed. **The endpoint-side half — the in-flight registry, `POST /cancel`, the 409s, and not storing an assistant message — is spec 009's to complete.** |
+| 6 | **Provider call is cancelled** (`asyncio.CancelledError`) | Event emitted with `status=cancelled`, null tokens, null `output_text`, no error fields. `describe_failure` is **not** called. `CancelledError` is re-raised — never swallowed. **There is no user-facing cancellation feature in this project** (a cancellation spec was scoped and then descoped before being built); this branch exists for any other source of task cancellation, e.g. server shutdown. |
 | 7 | **`model` not in spec 005's `PRICE_MAP`** | Not this spec's concern. The event carries no cost; ingestion stores `cost_usd` as null and returns 201. |
 | 8 | **`describe_call` raises** | `ERROR` log. **No event is emitted** — there is nothing to describe the call with. The provider call still runs and its result/exception still reaches the caller normally. |
 | 9 | **`describe_outcome` raises** | `ERROR` log. Event still emitted with `status=success` and null tokens/`output_text`. A partial log beats no log. The caller still gets the real result. |
@@ -894,7 +894,6 @@ it to a publisher. Everything routes through it:
 |---|---|---|
 | Chat endpoint | `chat` | 004, wired here |
 | Auto-title background task | `title` | 008 |
-| Cancelled generation | `chat` (status `cancelled`) | 009 |
 | Streaming chat | `chat` (with TTFT) | 012 |
 
 **One event per provider call — success, error, or cancellation, no exceptions.**
@@ -951,18 +950,19 @@ found the row already stored — the exact outcome at-least-once delivery wants.
 Treating it as failure would produce a permanent ERROR-log stream for a system
 that is working correctly.
 
-### 7. What this spec does NOT complete: the cancelled path
+### 7. The cancelled path is structural, not feature-driven
 
 `CallRecorder` emits a `status=cancelled` event when the wrapped provider call is
-cancelled. That is the whole of this spec's cancellation scope.
-
-**Everything else about cancellation is spec 009's**: the in-flight task registry
-keyed by `conversation_id`, `POST /conversations/{id}/cancel`, the 409 for
-"no generation in progress", the 409 for a concurrent send, the guarantee that no
-assistant message is stored, and the registration/`finally`-removal of the task
-around the provider call. Do not build any of it here, and do not consider
-cancellation "done" after this spec — the event is emitted but nothing yet
-triggers it through the API.
+cancelled. That is the whole of this spec's cancellation scope, and it is the
+**only** cancellation-related code in this project — there is no in-flight
+task registry, no `POST /conversations/{id}/cancel` endpoint, and no
+concurrent-send 409 anywhere in the codebase. A cancellation feature was
+scoped and then explicitly descoped before being built. This branch exists
+because `CancelledError` can still propagate from causes outside this
+project's control (e.g. the ASGI server cancelling the request's task on
+shutdown), and CLAUDE.md's "never swallow an exception" rule means that path
+still needs a real log entry rather than a silent gap. Do not build a
+cancellation feature to exercise this branch — it is not planned.
 
 ### 8. `request_params` and `config_hash` capture what was actually sent
 

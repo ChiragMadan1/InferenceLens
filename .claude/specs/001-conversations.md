@@ -15,12 +15,11 @@ read/create endpoints.
 - Messages, the `messages` table, and anything about `Conversation.messages`
   (spec 002 adds the model, the relationship, and the listing endpoint).
 - Sending a message / calling the LLM (spec 004).
-- Cancellation and `POST /conversations/{id}/cancel` (spec 009).
 - Auto-generated titles (spec 008). This spec only ships the default title
   `"New conversation"` and the column that 008 later overwrites.
 - Update, rename, delete, archive of a conversation — **no `PATCH`, no
   `DELETE` in v1.** The `status` column ships but no endpoint changes it.
-- Any frontend work (spec 010).
+- Any frontend work (spec 009).
 - Inference logging (specs 005–007). Nothing here touches logs.
 
 ## Functional requirements
@@ -281,7 +280,7 @@ Return `Page(items=..., total=total, limit=limit, offset=offset)`.
 | `422` | `conversation_id` is not an integer (FastAPI path coercion) |
 
 Raise `HTTPException(status_code=404, detail="Conversation not found")`. Use
-this exact detail string; specs 002, 004 and 009 reuse it for the same
+this exact detail string; specs 002 and 004 reuse it for the same
 condition.
 
 ### Router registration
@@ -386,7 +385,7 @@ Each becomes a pytest case using the `client` fixture from
   no `message_count`, no `last_message_at`, no token totals. Rationale: a count
   column needs write-path maintenance on every message insert and can drift; a
   live `COUNT(*)` per row turns the list into an N+1. Neither is justified when
-  no consumer asks for it — the frontend (spec 010) shows title and
+  no consumer asks for it — the frontend (spec 009) shows title and
   `updated_at` only. If a count is ever needed, compute it live in a single
   grouped query, and only then consider denormalising. This answers CLAUDE.md's
   "denormalized or computed live?" question for this feature: **neither, the

@@ -28,7 +28,7 @@ serves both listing and spec 004's context-window query, and **one** endpoint:
 - No inference logging (specs 005–007). A message row and a log row are
   independent by design — logs store their own denormalized copy of content and
   never reference `messages`.
-- No frontend (spec 011).
+- No frontend (spec 010).
 
 ## Functional requirements
 
@@ -267,7 +267,7 @@ Behaviour, in this order:
 | status | when |
 |---|---|
 | `200` | conversation exists — including when it has zero messages |
-| `404` | no conversation with that id — `{"detail": "Conversation not found"}` (exact string shared with specs 001, 004, 009) |
+| `404` | no conversation with that id — `{"detail": "Conversation not found"}` (exact string shared with specs 001, 004) |
 | `422` | `conversation_id` not an integer; `limit < 1`; `limit > 100`; `offset < 0`; non-integer `limit`/`offset` |
 
 ### Router registration
@@ -314,7 +314,7 @@ Locked in — do not re-decide:
 | 5 | `limit=abc` / `offset=1.5` | `422` |
 | 6 | `GET /conversations/abc/messages` | `422` (path coercion) |
 | 7 | **Ordering / pagination tradeoff** | Messages are append-only and ordered by an immutable `created_at`, so offset pagination is stable here — unlike `GET /conversations`, where a mutable `updated_at` sort key can shuffle rows between pages. The only skew is that a message appended *during* a paging sweep lands at the end and shifts nothing already read. Accepted; no cursor pagination in v1. |
-| 8 | **Client wants the newest messages** (the common chat-UI need) | Not served directly — ordering is `ASC` only, with no `order` param. The client issues one request, reads `total`, and jumps to the last page: `offset = max(0, total - limit)`. Costs one extra round trip. Accepted deliberately: a single fixed ordering keeps `offset` semantics unambiguous, and spec 011's chat view loads a short history anyway. |
+| 8 | **Client wants the newest messages** (the common chat-UI need) | Not served directly — ordering is `ASC` only, with no `order` param. The client issues one request, reads `total`, and jumps to the last page: `offset = max(0, total - limit)`. Costs one extra round trip. Accepted deliberately: a single fixed ordering keeps `offset` semantics unambiguous, and spec 010's chat view loads a short history anyway. |
 | 9 | Two messages with identical `created_at` | Deterministically ordered by the `id ASC` tie-break; neither is duplicated across pages nor dropped. |
 | 10 | Concurrent reads while spec 004 writes a turn | Reads see either both messages of the turn or neither, per the writing transaction's commit boundary. No locking, no `409` — reads never conflict. |
 | 11 | Orphan row (a `conversation_id` pointing nowhere) | Cannot arise via the API: only spec 004 writes messages and it validates the parent first. The FK declares the invariant; see the SQLite `PRAGMA` caveat under "Cascade on delete". If one existed, it would simply never be returned, because every read is scoped by an existing `conversation_id`. |

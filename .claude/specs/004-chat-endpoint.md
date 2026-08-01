@@ -23,40 +23,38 @@ leaves the user's message stored so they can retry without retyping.
   instrumented provider. Do not emit events, mint `request_id`s, compute
   `config_hash`, or measure latency in this spec. Half-building it here creates
   a second emission point, which is precisely what the design doc forbids.
-- **Cancellation is NOT here.** Spec 009 adds the in-flight registry, the
-  `POST /conversations/{id}/cancel` endpoint, and the concurrent-send 409. This
-  spec does not register tasks, does not track in-flight state, and does not
-  return 409 for a second concurrent send.
+- **Cancellation does not exist in this project.** There is no in-flight
+  registry, no `POST /conversations/{id}/cancel` endpoint, and no
+  concurrent-send 409 — a cancellation feature was scoped and then descoped
+  before being built. This spec does not register tasks, does not track
+  in-flight state, and does not return 409 for a second concurrent send; see
+  edge case 16.
 - **Auto-titling is NOT here.** Spec 008 hangs a background task off the first
   assistant reply.
 - **Streaming is NOT here.** Spec 012. This endpoint returns one complete JSON
   response.
-- **No frontend work.** Spec 011 adds `sendMessage` to `src/api.ts` and the chat
+- **No frontend work.** Spec 010 adds `sendMessage` to `src/api.ts` and the chat
   view.
 
-### Where 006 and 009 hook in
+### Where 006 hooks in
 
-Both attach to the same few lines in the router — the spec is written so they
-are additive, not surgical:
+It attaches to the same few lines in the router — the spec is written so it
+is additive, not surgical: **006** leaves
+`result = await provider.send_message(...)` exactly where it is and adds two
+keyword arguments to it (`temperature=`, `conversation_id=`). The logging
+happens because `Depends(get_chat_provider)` starts returning a
+`LoggingChatProvider` — the handler never learns that logging exists, injects
+no publisher, and imports nothing from the SDK.
 
-- **006** leaves `result = await provider.send_message(...)` exactly where it is
-  and adds two keyword arguments to it (`temperature=`, `conversation_id=`).
-  The logging happens because `Depends(get_chat_provider)` starts returning a
-  `LoggingChatProvider` — the handler never learns that logging exists, injects
-  no publisher, and imports nothing from the SDK.
-- **009** wraps that same awaitable in `asyncio.create_task(...)`, registers the
-  task under `conversation_id` before awaiting, and removes it in a `finally`.
-  The surrounding store-user → window → store-assistant flow is unchanged.
-
-Keep the provider call on **one clearly isolated line** in the handler so both
-follow-ups are a one-line substitution.
+Keep the provider call on **one clearly isolated line** in the handler so
+that follow-up is a one-line substitution.
 
 ## Functional requirements
 
 1. **FR1** — `POST /conversations/{conversation_id}/messages` accepts a
    `MessageCreate` body and returns `ChatTurnRead` with HTTP **200**.
 2. **FR2** — The handler is `async def`. It must be, so the provider call is
-   awaited on the event loop (and so spec 009 can cancel it).
+   awaited on the event loop.
 3. **FR3** — The conversation is validated to exist **before** anything is
    written. Missing conversation → **404**, no message row created.
 4. **FR4** — `MessageCreate.content` is rejected with **422** when it is empty or
@@ -99,8 +97,8 @@ follow-ups are a one-line substitution.
   served by spec 002's `(conversation_id, created_at)` index.
 - **Single-writer SQLite reality.** Two concurrent sends to the same
   conversation each get their own window snapshot; the second may not see the
-  first's assistant reply. Accepted in v1 — spec 009's concurrent-send 409 is
-  the real fix.
+  first's assistant reply. Accepted permanently — there is no concurrent-send
+  guard anywhere in this project (see edge case 16).
 - **No auth, no rate limiting, no caching, no realtime** (CLAUDE.md defaults).
 - Errors are logged with context at ERROR and returned as clean JSON; nothing is
   swallowed.
@@ -211,7 +209,7 @@ show); the raw provider message is logged, not returned.
    sub-second resolution and an unstable sort would scramble turn order.
 4. Map rows → `list[ProviderMessage]`.
 5. `result = await provider.send_message(messages=window, system=settings.SYSTEM_PROMPT, model=settings.OPENAI_MODEL, max_tokens=settings.MAX_TOKENS)`
-   — the single line specs 006 and 009 will wrap.
+   — the single line spec 006 wraps.
 6. If `result.content.strip() == ""` → `raise ProviderError("empty_response", "Provider returned no content.")`.
 7. `INSERT` the assistant message; set `conversation.updated_at = datetime.now(UTC)`;
    `db.commit()`; `db.refresh(assistant_message)`.
@@ -241,9 +239,9 @@ that is 006's change, not this one.
 | 13 | Provider connection/DNS failure | **502**, `(connection)`. User message retained. |
 | 14 | Provider returns a response with no text content | **502**, `(empty_response)` per FR13. No assistant message is written; the user message stays. Rationale: `Message.content` is non-empty by contract, and an empty bubble is worse UX than a retryable error. |
 | 15 | `OPENAI_API_KEY` missing **at startup** | The app does not boot — `Settings()` raises a pydantic `ValidationError` at import (spec 003, FR10). This endpoint never serves a request. Distinct from case 11, which is a running app with a bad key. |
-| 16 | Second message sent while one is in flight | v1 behavior in **this** spec: both proceed independently; the second may build its window before the first assistant reply lands. **Spec 009** replaces this with a **409**. Do not implement the 409 here. |
+| 16 | Second message sent while one is in flight | Both proceed independently; the second may build its window before the first assistant reply lands. There is no concurrent-send guard anywhere in this project — accepted permanently, not just for v1. |
 | 17 | Provider succeeds but the assistant `INSERT` fails (e.g. `IntegrityError`) | The existing central `IntegrityError` handler returns **409**. The user message is already committed and survives. Rare; no router-level handling added. |
-| 18 | Request cancelled by the client mid-call | `asyncio.CancelledError` propagates; no assistant message is stored, the user message remains. Spec 009 makes this a deliberate, logged path. |
+| 18 | Request cancelled by the client mid-call | `asyncio.CancelledError` propagates; no assistant message is stored, the user message remains. There is no user-facing way to trigger this in v1 — it can only arise from something outside this endpoint (e.g. server shutdown) cancelling the task. |
 
 ## Acceptance criteria
 
@@ -334,8 +332,8 @@ change), `app/providers/*` (spec 003 owns it), anything under `frontend/`.
 - **Roles are `user`/`assistant` only.** The DB enum, the `ProviderMessage`
   literal, and the OpenAI Responses API `input` array agree exactly; the system prompt
   travels on its own channel (FR8).
-- **One line for the provider call.** Specs 006 and 009 both substitute on it.
-  Do not inline it into a larger expression or split it across a helper chain.
+- **One line for the provider call.** Spec 006 substitutes on it. Do not
+  inline it into a larger expression or split it across a helper chain.
 - **No router-level `try`/`except` for `ProviderError` or `IntegrityError`** —
   both have central handlers.
 - Run `make lint` before considering the change done.

@@ -87,10 +87,7 @@ if multi-call turns (e.g. tool use) arrive.
 - DB storage for conversations, messages, and inference logs (SQLite via
   SQLAlchemy, migrations via Alembic — per project conventions).
 - Frontend (React/Vite): conversation list, create conversation, resume
-  (open and continue) a conversation, chat view, cancel an in-flight
-  response.
-- Cancellation: aborts the in-flight generation only; the conversation
-  stays open.
+  (open and continue) a conversation, chat view.
 - Streaming responses (SSE): planned as a **later feature** in the breakdown,
   not part of the initial chat implementation.
 - Pagination on **all** list endpoints (conversations, messages, logs) —
@@ -132,20 +129,16 @@ on the next conversation-list refresh.
 messages load (`GET /conversations/{id}/messages`) → user continues chatting;
 the model receives the last 10 messages as context.
 
-**Flow 4 — cancel:** user sends a message → while the assistant response is
-pending, clicks "Cancel" → `POST /conversations/{id}/cancel` aborts the
-in-flight generation → the user message remains in history, no assistant
-message is stored → an inference log with status `cancelled` is emitted →
-user may send another message immediately.
-
-**Flow 5 — logging (system flow):** chat endpoint calls the provider through
+**Flow 4 — logging (system flow):** chat endpoint calls the provider through
 the SDK wrapper → wrapper measures latency, captures usage/status → builds an
 `InferenceLogEvent` → publishes via `EventPublisher` (v1: async HTTP POST to
 `POST /ingest/logs`, fire-and-forget from the chat request's perspective) →
 ingestion validates the payload → stores an `InferenceLog` row. Publisher
 failures are logged server-side and never fail the chat request.
 
-**Flow 6 — inspect logs (API-only in v1):** `GET /logs?conversation_id=...`
+**Flow 5 — inspect logs** (originally API-only; **superseded** by specs 014 and
+015, which add aggregate endpoints and a log dashboard — see the feature
+breakdown): `GET /logs?conversation_id=...`
 returns paginated inference logs (previews computed at read time; full
 content on the detail endpoint).
 
@@ -277,8 +270,6 @@ how Langfuse/OTel handle the same problem.
    conversation as context (sliding window).
 5. FR5: User can list a conversation's messages, paginated, in chronological
    order.
-6. FR6: User can cancel an in-flight generation; the request aborts, no
-   assistant message is stored, and the conversation remains usable.
 7. FR7: Every provider call — chat or title; success, error, or cancelled —
    produces exactly one inference log event containing: request_id,
    call_type, model, provider, latency_ms, token usage (when available),
@@ -630,7 +621,6 @@ not building yet (overengineering-for-v1 flags):
 | DB | SQLite, single writer | Postgres via `DATABASE_URL` (already the only config knob) | zero code change by design |
 | Event durability | HTTP fire-and-forget; loss accepted | Kafka publisher + consumer, batch inserts | broker is ops overhead with one consumer at demo volume |
 | Ingestion write path | 1 insert per event | consumer-side batching; log table partitioning by time | irrelevant below ~100s of events/sec |
-| **Cancellation registry** | **in-process dict — breaks with >1 uvicorn worker** | shared registry (Redis) or DB cancellation flag polled by the generation task | single-process dev server in v1; the *sharpest* known limitation, documented |
 | Analytics (Q5) | SQL scans | rollups or ClickHouse sidecar | scans are instant at demo row counts |
 | Log growth | unbounded | retention/TTL + cold storage offload for content | demo lifetime is short |
 | Ingestion abuse | open endpoint | shared-secret header / mTLS between services | internal-only in v1, per project no-auth default |
@@ -648,7 +638,6 @@ All under the existing single FastAPI app. Request/response schemas in
 | GET    | `/conversations/{id}`             | Get one conversation                      | — → `ConversationRead` |
 | POST   | `/conversations/{id}/messages`    | Send user message, get assistant reply    | `MessageCreate` → `ChatTurnRead` (user + assistant messages) |
 | GET    | `/conversations/{id}/messages`    | List messages (paginated, chronological)  | — → `Page[MessageRead]` |
-| POST   | `/conversations/{id}/cancel`      | Abort in-flight generation                | — → `CancelResult` |
 | POST   | `/ingest/logs`                    | Ingest an inference log event (SDK-facing)| `InferenceLogEventIn` → `InferenceLogRead` |
 | GET    | `/logs`                           | List logs (paginated; filters: conversation_id, status, call_type; computed previews) | — → `Page[InferenceLogSummary]` |
 | GET    | `/logs/{request_id}`              | One log with full input/output content    | — → `InferenceLogRead` |
@@ -680,7 +669,6 @@ chat router ──> provider: ChatProvider = Depends(get_chat_provider)
      │                       ├── OpenAIProvider (v1) ── normalizes → ProviderResult
      │                       └── AnthropicProvider (future) ── same interface
      │
-     ├── in-flight registry (cancel)
      ├── auto-title background task ──> get_title_provider() (same path, call_type=title)
      └── conversations / messages tables        /ingest ──> inference_logs table
 
@@ -732,9 +720,7 @@ cheap/fast settings (`OPENAI_TITLE_MODEL`, default `gpt-5.6-luna`).
 |---|------|----------|
 | 1 | Send message to nonexistent conversation | 404 |
 | 2 | Empty/whitespace message content | 422 (schema validation) |
-| 3 | Second message sent while one is in flight for the same conversation | 409 with clear detail |
-| 4 | Cancel when nothing is in flight | 409 ("no generation in progress") |
-| 5 | Cancel races completion (response already finished) | 409 same as #4; completed message stands |
+| 3 | Second message sent while one is in flight for the same conversation | Both proceed independently in v1 — no concurrent-send guard; accepted for a single-user demo |
 | 6 | Provider API error (rate limit, auth, 5xx) | 502-style clean JSON error to client; log stored with `status=error` + error fields; user message kept so the user can retry |
 | 7 | Publisher/ingestion unreachable | Chat response unaffected; ERROR log line with event context; event lost (v1 accepts loss — Kafka later adds durability) |
 | 8 | Duplicate event delivery (same request_id) | Unique constraint → 409 via the existing IntegrityError handler; publisher treats as success |
@@ -750,11 +736,10 @@ cheap/fast settings (`OPENAI_TITLE_MODEL`, default `gpt-5.6-luna`).
 
 Per project conventions:
 
-- 404 — missing parent (conversation) on message create/list/cancel; unknown
+- 404 — missing parent (conversation) on message create/list; unknown
   log `request_id`.
 - 409 — IntegrityError (duplicate `request_id`) via the existing central
-  handler; explicit 409s for cancel-with-nothing-in-flight and
-  concurrent-send.
+  handler.
 - 422 — Pydantic validation (empty content, malformed event payload, unknown
   schema_version).
 - 502 — provider failure, translated in `app/core/errors.py` from a
@@ -792,19 +777,35 @@ Each item is one `/generate-spec` spec and one implementation pass.
    `GET /logs/{request_id}` (full content). Needs 005.
 8. **008-auto-title** — background titling task after first turn, through
    the logged provider path with `call_type=title`. Needs 006.
-9. **009-cancellation** — in-flight registry, `POST /cancel`,
-   concurrent-send 409, cancelled-status log emission. Needs 006.
-10. **010-frontend-conversations** — conversation list page, create button,
-    resume navigation; api.ts functions. Needs 001.
-11. **011-frontend-chat** — chat view: message history, send box, pending
-    state, cancel button, error display. Needs 004, 009, 010.
+9. **009-frontend-conversations** — frontend foundation (react-router,
+   Tailwind v4 token layer, framer-motion, shared hooks and UI primitives,
+   app shell with conversation rail, the signal-ribbon signature) plus the
+   conversations index page. Needs 001.
+10. **010-frontend-chat** — chat page at `/c/:id`: message history, composer,
+    pending state, error display. Needs 004, 009.
 12. **012-streaming** — SSE streaming of assistant responses end-to-end
-    (backend + frontend), cancel integrated with the stream; SDK starts
-    measuring and emitting `time_to_first_token_ms`. Needs 011.
+    (backend + frontend); SDK starts measuring and emitting
+    `time_to_first_token_ms`. Needs 010.
     (Deferred bonus.)
 13. **013-docs** — README (setup, architecture overview, schema decisions,
     tradeoffs, future work incl. Kafka consumer + scale path) +
     architecture notes deliverable. Last.
+14. **014-logs-stats-api** — `GET /logs/stats` (KPIs, latency percentiles,
+    token/cost sums, breakdowns) + `GET /logs/timeseries` (dense bucketed
+    series), `model`/`provider` filters on `GET /logs`, and the UTC
+    serialisation fix a time-windowed API requires. Serves query pattern Q5.
+    Needs 005, 007.
+15. **015-frontend-logs** — inference log dashboard at `/logs` (filter bar,
+    KPI row, five charts, paginated log table) and the log detail page at
+    `/logs/:requestId` (full rendered prompt, completion, params, timings).
+    Needs 007, 009, 014.
+
+Items 14 and 15 were added after the original breakdown: they **reverse this
+doc's "observability is API-only in v1" position** (Flow 5). The reasoning is
+recorded in 015's problem statement — the product's thesis is that LLM calls
+are opaque and observability makes them operable, and a system that can only
+demonstrate that through `curl` demonstrates it weakly. They are numbered
+after 013 to avoid renumbering the specs that reference 012 and 013.
 
 ## Open questions
 

@@ -286,7 +286,7 @@ declaration order still matters for clarity.
 ### Frontend
 
 **No frontend changes.** The logs API is API-only in v1 (design doc scope, and
-the spec-decisions file's 011 entry: "No log-viewing UI in v1"). No functions are
+the spec-decisions file's 010 entry: "No log-viewing UI in v1"). No functions are
 added to `frontend/src/api.ts` and no TypeScript types are mirrored. When a log
 UI is built, `InferenceLogSummary` / `InferenceLogRead` / `Page<T>` mirror by
 name at that point.

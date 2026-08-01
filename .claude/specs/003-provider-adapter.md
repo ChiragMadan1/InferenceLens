@@ -36,9 +36,9 @@ library + settings change. It is independent of 001 and 002.
    provider-specific overflow.
 3. **FR3** — `OpenAIProvider` implements `ChatProvider` using the official
    `openai` SDK's **`AsyncOpenAI`** client, calling the **Responses API**
-   (`client.responses.create`). The async client is mandatory: spec 009's
-   cancellation calls `task.cancel()` and needs the provider call to be an
-   interruptible awaitable.
+   (`client.responses.create`). The async client is mandatory: this is an
+   `async def` FastAPI endpoint, and the sync client would block the event
+   loop for the full duration of every provider call.
 4. **FR4** — `OpenAIProvider` normalizes the native `Response` object into a
    `ProviderResult` per the mapping table in "Data model". OpenAI's
    `usage.input_tokens_details.cached_tokens`,
@@ -61,8 +61,8 @@ library + settings change. It is independent of 001 and 002.
    context at ERROR, and re-raises as `ProviderError`. No `except` block
    swallows; no bare `except:`.
 8. **FR8** — `asyncio.CancelledError` is **not** caught or converted. It
-   propagates unchanged so spec 009's cancellation works and asyncio semantics
-   are preserved.
+   propagates unchanged, preserving normal asyncio semantics regardless of
+   what triggers the cancellation.
 9. **FR9** — No custom retry logic. The `openai` SDK's built-in retry behaviour
    (default `max_retries=2`, short exponential backoff on connection errors and
    408/409/429/5xx) is the retry policy.
@@ -94,7 +94,8 @@ library + settings change. It is independent of 001 and 002.
   to the SDK client as its request timeout, overriding the SDK's own 10-minute
   default. Because the SDK retries timeouts, worst-case wall clock is roughly
   `PROVIDER_TIMEOUT_SECONDS × (max_retries + 1)` ≈ 180s at defaults. This is
-  accepted in v1; spec 009's cancellation is the user-facing escape hatch.
+  accepted in v1 — there is no user-facing way to abort a call before it
+  resolves; cancellation is not a feature this project implements.
 - **Logging discipline.** Every caught SDK exception logs at ERROR with
   `provider`, `model`, and `error_type` context — never the API key, never the
   full prompt.
@@ -293,11 +294,10 @@ Two parameters exist for the log rather than for the vendor API:
 **Why one abstract method and not several** (`build_request` / `send` /
 `map_response` as separate abstract hooks): the intermediate values between
 those steps are vendor-shaped, so the base class could only type them as `Any`
-— structure without safety. More importantly, two downstream features need
-this to be exactly one awaitable: spec 006's `CallRecorder` measures one call
-and emits exactly one event, and spec 009's cancellation interrupts one
-in-flight awaitable. A multi-step sequence makes "latency" ambiguous and leaves
-gaps where a cancel lands between steps. The per-step guidance lives in the
+— structure without safety. More importantly, a downstream feature needs this
+to be exactly one awaitable: spec 006's `CallRecorder` measures one call and
+emits exactly one event. A multi-step sequence makes "latency" ambiguous. The
+per-step guidance lives in the
 docstring and in the reference adapter instead, so a new implementor still gets
 a checklist. If three providers later show the same duplicated skeleton,
 promoting it to a template method is an internal refactor — this public
@@ -393,8 +393,8 @@ self._client = AsyncOpenAI(api_key=api_key, timeout=timeout_seconds)
 
 - **`uv add openai`** — a main (not dev) dependency. `pyproject.toml` and
   `uv.lock` update together. No `pip install`, no venv activation.
-- **`AsyncOpenAI` only.** Do not use the sync `OpenAI` client anywhere.
-  Spec 009's `task.cancel()` depends on the call being an awaitable.
+- **`AsyncOpenAI` only.** Do not use the sync `OpenAI` client anywhere — it
+  would block the event loop for the duration of every provider call.
 - **Responses API, not Chat Completions.** `client.responses.create` is chosen
   over `client.chat.completions.create` for three concrete reasons: it has a
   top-level `instructions` parameter, so FR5 (the system prompt is never a
@@ -483,7 +483,7 @@ Prices are OpenAI list pricing as of August 2026 and are duplicated in spec
 | 11 | `status == "failed"` with `response.error` populated | Treated as a normal mapping, **not** an exception: the SDK did not raise, so the adapter does not either. `stop_reason == "failed"` and `content == ""`. Spec 004 decides what an empty completion means for a chat turn. (The common failure modes — auth, rate limit, 5xx — raise before reaching this point.) |
 | 12 | Caller passes an empty `messages` list | The SDK returns `BadRequestError` → `ProviderError("invalid_request", ...)`. The adapter does not pre-validate; spec 004 guarantees at least the just-stored user message is present. |
 | 13 | Configured model rejects `reasoning={"effort": "none"}` | `BadRequestError` → `ProviderError("invalid_request", ...)`. `"none"` is supported by the GPT-5.6 family; older GPT-5 models bottom out at `"minimal"`. Changing `OPENAI_MODEL` to such a model requires changing the effort value with it. |
-| 14 | Task cancelled mid-call (spec 009) | `asyncio.CancelledError` propagates untouched. It is a `BaseException`, so an `except Exception` clause will not catch it — but do not add a bare `except:` or an `except BaseException:` anywhere in this module. |
+| 14 | Task cancelled mid-call (e.g. by something outside this module, such as server shutdown — there is no user-facing cancellation feature) | `asyncio.CancelledError` propagates untouched. It is a `BaseException`, so an `except Exception` clause will not catch it — but do not add a bare `except:` or an `except BaseException:` anywhere in this module. |
 | 15 | An exception type outside the OpenAI taxonomy (e.g. a JSON decode bug) | Not caught here. It propagates as-is and becomes a 500 via FastAPI's default handling. Converting genuinely unexpected errors into a 502 "provider failed" would hide bugs. |
 
 ## Acceptance criteria

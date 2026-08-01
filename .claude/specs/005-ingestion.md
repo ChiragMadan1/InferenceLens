@@ -478,7 +478,7 @@ specs in agreement. Two reasons, both load-bearing:
 
 - **Timezone**: SQLite's `CURRENT_TIMESTAMP` yields a naive value, which
   FastAPI then serialises without a UTC offset, and the browser renders it as
-  local time — a silent skew in the frontend (flagged by specs 010/011).
+  local time — a silent skew in the frontend (flagged by specs 009/010).
 - **Granularity**: `CURRENT_TIMESTAMP` is second-granular. A chat log and the
   title log for the same turn routinely land in the same second, so
   `ORDER BY created_at DESC` alone is unstable across pages. Spec 007's
