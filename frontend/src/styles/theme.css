@@ -1,0 +1,196 @@
+@import "tailwindcss";
+
+/* Dark is the primary composition (spec 009 "Direction"); [data-theme] is
+   set on <html> pre-paint by index.html's inline script (FR5). */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+:root,
+[data-theme="dark"] {
+  --raw-canvas: #12171f;
+  --raw-surface: #1a2130;
+  --raw-surface-raised: #222c3e;
+  --raw-surface-sunken: #0d1219;
+  --raw-hairline: #2a3549;
+  --raw-ink: #e7ecf3;
+  --raw-ink-secondary: #b3c0d2;
+  --raw-ink-muted: #8a97ab;
+  --raw-signal: #38bdf8;
+  --raw-signal-soft: #38bdf81f;
+  --raw-accent: #a78bfa;
+  --raw-status-success: #0fa968;
+  --raw-status-cancelled: #94a3b8;
+  --raw-status-error: #ef4a5e;
+
+  --raw-shadow-panel: 0 0 0 1px var(--raw-hairline) inset, 0 2px 6px rgba(0, 0, 0, 0.35);
+  --raw-shadow-raised: 0 0 0 1px var(--raw-hairline) inset, 0 8px 24px rgba(0, 0, 0, 0.5);
+  --raw-shadow-focus: 0 0 0 1px var(--raw-hairline) inset, 0 0 0 2px rgba(56, 189, 248, 0.4);
+}
+
+[data-theme="light"] {
+  --raw-canvas: #f3f5f9;
+  --raw-surface: #ffffff;
+  --raw-surface-raised: #ffffff;
+  --raw-surface-sunken: #e8ecf3;
+  --raw-hairline: #dce2ec;
+  --raw-ink: #101a2b;
+  --raw-ink-secondary: #3d4b60;
+  --raw-ink-muted: #64748b;
+  --raw-signal: #0e7fb8;
+  --raw-signal-soft: #0e7fb814;
+  --raw-accent: #7c3aed;
+  --raw-status-success: #047857;
+  --raw-status-cancelled: #64748b;
+  --raw-status-error: #dc2626;
+
+  --raw-shadow-panel: 0 0 0 1px var(--raw-hairline) inset, 0 2px 6px rgba(15, 23, 42, 0.08);
+  --raw-shadow-raised: 0 0 0 1px var(--raw-hairline) inset, 0 8px 24px rgba(15, 23, 42, 0.12);
+  --raw-shadow-focus: 0 0 0 1px var(--raw-hairline) inset, 0 0 0 2px rgba(14, 127, 184, 0.4);
+}
+
+@theme {
+  /* Colour — semantic tokens resolve to the raw values swapped above,
+     consumed as bg-surface / text-ink-muted / border-hairline, etc. */
+  --color-canvas: var(--raw-canvas);
+  --color-surface: var(--raw-surface);
+  --color-surface-raised: var(--raw-surface-raised);
+  --color-surface-sunken: var(--raw-surface-sunken);
+  --color-hairline: var(--raw-hairline);
+  --color-ink: var(--raw-ink);
+  --color-ink-secondary: var(--raw-ink-secondary);
+  --color-ink-muted: var(--raw-ink-muted);
+  --color-signal: var(--raw-signal);
+  --color-signal-soft: var(--raw-signal-soft);
+  --color-accent: var(--raw-accent);
+  --color-status-success: var(--raw-status-success);
+  --color-status-cancelled: var(--raw-status-cancelled);
+  --color-status-error: var(--raw-status-error);
+
+  /* Typography — three faces, three jobs (see theme.css consumers). */
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --text-display-lg: 2.25rem;
+  --text-display-lg--line-height: 1.05;
+  --text-display-lg--letter-spacing: -0.02em;
+
+  --text-display: 1.625rem;
+  --text-display--line-height: 1.15;
+  --text-display--letter-spacing: -0.015em;
+
+  --text-h2: 1.125rem;
+  --text-h2--line-height: 1.3;
+  --text-h2--letter-spacing: -0.01em;
+
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.55;
+  --text-body--letter-spacing: 0em;
+
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.45;
+  --text-sm--letter-spacing: 0em;
+
+  /* micro is also uppercase — that's a text-transform, applied via the
+     `uppercase` utility alongside `text-micro` wherever it's used. */
+  --text-micro: 0.6875rem;
+  --text-micro--line-height: 1.3;
+  --text-micro--letter-spacing: 0.08em;
+
+  --text-data: 0.8125rem;
+  --text-data--line-height: 1.4;
+  --text-data--letter-spacing: 0em;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+
+  /* Elevation — hairline + soft shadow, composed in the raw layer above. */
+  --shadow-panel: var(--raw-shadow-panel);
+  --shadow-raised: var(--raw-shadow-raised);
+  --shadow-focus: var(--raw-shadow-focus);
+
+  /* Motion durations/easings — consumed via arbitrary-value utilities
+     (duration-[var(--dur-base)]) or the auto-generated ease-* utilities. */
+  --dur-instant: 90ms;
+  --dur-fast: 160ms;
+  --dur-base: 240ms;
+  --dur-slow: 380ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.55, 0, 1, 0.45);
+  --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+/* The "measurements are set in mono" rule (see spec's Typography section):
+   every latency, token count, cost, id, hash, model name, and timestamp
+   uses this utility — font family plus guaranteed tabular figure widths. */
+@utility font-data {
+  font-family: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    margin: 0;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-signal);
+    outline-offset: 2px;
+  }
+}
+
+/* Skeleton shimmer sweep (FR13's first-load treatment). */
+@keyframes shimmer-sweep {
+  0% {
+    background-position: -150% 0;
+  }
+  100% {
+    background-position: 150% 0;
+  }
+}
+
+.skeleton-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    var(--color-hairline),
+    transparent
+  );
+  background-size: 200% 100%;
+  animation: shimmer-sweep 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer {
+    animation: none;
+    background-image: none;
+    opacity: 0.08;
+  }
+}

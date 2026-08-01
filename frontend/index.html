@@ -2,7 +2,39 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ollive</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+
+    <script>
+      // Pre-paint theme resolution (FR5): must run before first paint so
+      // there is no flash of the wrong theme. localStorage may be
+      // unavailable (private mode) — fall back to system, never throw.
+      (function () {
+        var resolved = 'dark'
+        try {
+          var pref = localStorage.getItem('ollive:theme')
+          if (pref === 'light' || pref === 'dark') {
+            resolved = pref
+          } else {
+            resolved = window.matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light'
+          }
+        } catch (e) {
+          resolved = window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light'
+        }
+        document.documentElement.setAttribute('data-theme', resolved)
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
