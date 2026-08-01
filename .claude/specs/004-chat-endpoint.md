@@ -18,11 +18,11 @@ leaves the user's message stored so they can retry without retyping.
 ### Explicitly out of scope
 
 - **Inference logging is NOT wired here.** Spec 006 introduces
-  `InferenceLogEvent`, `EventPublisher`, and the `logged_chat()` wrapper, and
-  swaps the direct `provider.send_message(...)` call for `logged_chat(provider, ...)`.
-  Do not emit events, mint `request_id`s, compute `config_hash`, or measure
-  latency in this spec. Half-building it here creates a second emission point,
-  which is precisely what the design doc forbids.
+  `InferenceLogEvent`, `EventPublisher`, `CallRecorder`, and
+  `LoggingChatProvider`, and makes `get_chat_provider()` return an already
+  instrumented provider. Do not emit events, mint `request_id`s, compute
+  `config_hash`, or measure latency in this spec. Half-building it here creates
+  a second emission point, which is precisely what the design doc forbids.
 - **Cancellation is NOT here.** Spec 009 adds the in-flight registry, the
   `POST /conversations/{id}/cancel` endpoint, and the concurrent-send 409. This
   spec does not register tasks, does not track in-flight state, and does not
@@ -39,9 +39,11 @@ leaves the user's message stored so they can retry without retyping.
 Both attach to the same few lines in the router — the spec is written so they
 are additive, not surgical:
 
-- **006** replaces `result = await provider.send_message(...)` with
-  `result = await logged_chat(provider, ...)`, passing the same arguments plus
-  `call_type="chat"` and `conversation_id`. Nothing else in the handler moves.
+- **006** leaves `result = await provider.send_message(...)` exactly where it is
+  and adds two keyword arguments to it (`temperature=`, `conversation_id=`).
+  The logging happens because `Depends(get_chat_provider)` starts returning a
+  `LoggingChatProvider` — the handler never learns that logging exists, injects
+  no publisher, and imports nothing from the SDK.
 - **009** wraps that same awaitable in `asyncio.create_task(...)`, registers the
   task under `conversation_id` before awaiting, and removes it in a `finally`.
   The surrounding store-user → window → store-assistant flow is unchanged.

@@ -240,8 +240,8 @@ below. Spec 004 is the first consumer.
 ```python
 # app/providers/base.py
 
-class ChatProvider(ABC):
-    name: ClassVar[Provider]
+class ChatProvider(InstrumentedProvider):        # SDK ABC — see spec 006
+    provider_name: ClassVar[Provider]            # satisfies InstrumentedProvider
 
     @abstractmethod
     async def send_message(
@@ -251,6 +251,8 @@ class ChatProvider(ABC):
         system: str,
         model: str,
         max_tokens: int,
+        temperature: float,
+        conversation_id: int | None = None,
     ) -> ProviderResult:
         """Send one chat request and return a normalized result.
 
@@ -271,11 +273,28 @@ class ChatProvider(ABC):
         """
 ```
 
+**`ChatProvider` extends the logging SDK's `InstrumentedProvider`** (spec 006),
+which adds four more mandatory members: `provider_name` plus `describe_call()`,
+`describe_outcome()`, and `describe_failure()`. Those are how the SDK learns what
+to record without hardcoding anything about a provider; forgetting one is a
+`TypeError` at instantiation. They are pure mappings, exactly like
+`_map_response` — see spec 006's "The provider declares; the SDK records".
+
+Two parameters exist for the log rather than for the vendor API:
+
+- **`temperature`** — recorded in `request_params` and hashed into
+  `config_hash`. `OpenAIProvider` deliberately does **not** forward it (GPT-5
+  models reject it; see below). Another adapter may forward it. Deciding which
+  parameters a vendor accepts is precisely the adapter's job.
+- **`conversation_id`** — pure log linkage, consumed by `describe_call` only.
+  It travels with the call so the recorded value is the effective one, rather
+  than being re-read from global state by the logger.
+
 **Why one abstract method and not several** (`build_request` / `send` /
 `map_response` as separate abstract hooks): the intermediate values between
 those steps are vendor-shaped, so the base class could only type them as `Any`
 — structure without safety. More importantly, two downstream features need
-this to be exactly one awaitable: spec 006's `logged_chat()` measures one call
+this to be exactly one awaitable: spec 006's `CallRecorder` measures one call
 and emits exactly one event, and spec 009's cancellation interrupts one
 in-flight awaitable. A multi-step sequence makes "latency" ambiguous and leaves
 gaps where a cancel lands between steps. The per-step guidance lives in the
@@ -294,8 +313,8 @@ signature does not change.
   parameter names is exactly the adapter's job.
 - `messages` must be non-empty; spec 004's window construction guarantees a
   valid sequence because it is built from stored history.
-- `temperature` is deliberately **not** a parameter of `send_message()` — see
-  "Constraints" and "Open questions".
+- `temperature` **is** a parameter of `send_message()`, but `OpenAIProvider`
+  never forwards it to the API — see "Constraints" and "Open questions".
 
 ```python
 # app/providers/openai.py
@@ -393,11 +412,14 @@ self._client = AsyncOpenAI(api_key=api_key, timeout=timeout_seconds)
   OpenAI's side for 30 days by default. This project's whole point is that *we*
   own the inference record, so provider-side retention is unnecessary
   duplication of user content. Opting out is the conservative default.
-- **Sampling parameters are not sent.** `TEMPERATURE` exists in `Settings` (per
-  the confirmed decision list) and will be recorded by spec 006 in
-  `request_params`, but the adapter does **not** pass `temperature` to the
+- **Sampling parameters are not sent.** `temperature` is a `send_message()`
+  parameter and `describe_call()` records it in `request_params` /
+  `config_hash` (spec 006), but `_build_request()` does **not** pass it to the
   OpenAI API: GPT-5-family reasoning models reject `temperature` / `top_p` with
-  a 400 ("only the default (1) value is supported"). See "Open questions".
+  a 400 ("only the default (1) value is supported"). This split — a parameter
+  the adapter records but does not forward — is normal and is why the two
+  mappings (`describe_call` for the log, `_build_request` for the vendor) are
+  separate methods. See "Open questions".
 - **Reasoning is disabled on every call.** GPT-5.6 models reason by default and
   `max_output_tokens` caps reasoning *plus* visible text together; at
   `MAX_TOKENS=1024` that risks a `status="incomplete"` response with empty
@@ -415,7 +437,7 @@ self._client = AsyncOpenAI(api_key=api_key, timeout=timeout_seconds)
   contract from its implementation. `base.py` has **three** importers that must
   not see OpenAI internals — `app/core/errors.py` (needs `ProviderError`),
   spec 004's router (needs `ChatProvider`/`ProviderResult`/`Provider`), spec 006's
-  `logged_chat()` (needs both) — and the design doc records multi-provider as a
+  `LoggingChatProvider` (needs both) — and the design doc records multi-provider as a
   confirmed direction, so the second implementation is a file addition rather
   than an edit to a growing module. A flat `providers.py` would force those
   three importers to import the module that imports `openai`. There is no
@@ -521,7 +543,8 @@ async fake returning a fabricated response object — still no network.
 - [ ] `send_message()` passes the system prompt as the `instructions` kwarg,
       `max_tokens` as the `max_output_tokens` kwarg, and the `input` list
       contains no entry with `role == "system"` or `role == "developer"`.
-- [ ] `send_message()` does not pass a `temperature` kwarg.
+- [ ] `send_message()` does not pass a `temperature` kwarg **to the OpenAI
+      client**, even when one is supplied to it.
 - [ ] `Settings()` exposes the eight new fields with the documented defaults
       when only `OPENAI_API_KEY` is set in the environment, and
       `settings.PROVIDER is Provider.OPENAI`.
@@ -575,8 +598,12 @@ Set `PROVIDER=anthropic` in `.env` and the whole app switches. Its mapping:
 Its error taxonomy is the same shape (`anthropic.APITimeoutError`,
 `RateLimitError`, `AuthenticationError`, `APIStatusError`, …), mapping onto the
 same closed `error_type` vocabulary. Nothing else changes: not `ProviderResult`,
-not the event schema, not `inference_logs`, not the router, not `logged_chat()`,
-not a single test that uses `StubProvider`.
+not the event schema, not `inference_logs`, not the router, not the logging SDK,
+not `LoggingChatProvider`, not a single test that uses `StubProvider`. The new
+adapter writes its own `describe_call` / `describe_outcome` / `describe_failure`
+mappings alongside the response and error mappings above, and it is instrumented
+the moment `_build()` returns it — because `get_chat_provider()` wraps whatever
+`_build()` produced.
 
 Note what the four steps above do **not** include: no change to
 `get_chat_provider()`'s signature, no change to how spec 004 obtains a
@@ -593,8 +620,11 @@ That is the whole test of whether this boundary is real.
   promoted to a canonical `ProviderResult` field (and later a log column) only
   when a query pattern needs to filter or aggregate on it.
 - **One emission point discipline.** This spec does not log inference events.
-  Spec 006 wraps `ChatProvider.send_message()` from the outside with
-  `logged_chat()`; the adapter must stay unaware that logging exists.
+  Spec 006 wraps `ChatProvider` from the outside with `LoggingChatProvider`, and
+  `CallRecorder` is the only thing that builds an event. The adapter never
+  constructs an event, never touches a publisher, and never imports the SDK's
+  recorder or publisher — it only *describes* itself through the `describe_*`
+  mappings and is otherwise unaware that logging exists.
 - **`error_type` values are a closed vocabulary in v1** — the eleven strings in
   the mapping table (`timeout`, `connection`, `rate_limit`, `authentication`,
   `permission`, `not_found`, `conflict`, `invalid_request`, `server_error`,

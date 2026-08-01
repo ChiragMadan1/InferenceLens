@@ -5,6 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.18.5",
     "fastapi>=0.139.2",
+    "httpx>=0.28.1",
     "openai>=2.52.0",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
@@ -14,7 +15,6 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
     "pytest>=9.1.1",
     "ruff>=0.15.22",
 ]

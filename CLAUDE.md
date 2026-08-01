@@ -43,6 +43,19 @@ this file is guidance; these are hard constraints.
 - **Never let a child record reference a nonexistent parent.** Validate
   the parent exists before creating/updating; return 404, not a raw DB
   error.
+- **Never obtain an LLM provider except through `app.providers`'
+  accessors.** `get_chat_provider()` / `get_title_provider()` return an
+  already-instrumented provider; concrete adapters (`OpenAIProvider`, …)
+  are not exported and must not be imported or constructed anywhere
+  outside `app/providers/__init__.py`. See "LLM calls and the logging
+  SDK".
+- **Never construct an `InferenceLogEvent` or call a publisher outside
+  the SDK.** `CallRecorder` is the single emission point. If you are
+  writing event-building or publishing code in a router, a background
+  task, or an adapter, you are in the wrong file.
+- **Never import from `app.*` inside `app/logging_sdk/`.** The package is
+  host-agnostic by contract — config comes in as constructor arguments,
+  provider knowledge comes in through the `InstrumentedProvider` ABC.
 - **Never commit secrets or generated artifacts.** `.env`, `app.db`,
   `.venv/`, `node_modules/` are gitignored — keep it that way.
   `.env.example` (no real secrets) is the thing that gets committed.
@@ -58,11 +71,21 @@ this file is guidance; these are hard constraints.
           config.py        # pydantic-settings Settings, loaded from .env
           logging.py        # setup_logging(), called from lifespan
           errors.py          # exception -> clean JSON response translation
+          observability.py    # composition root: builds the SDK publisher from settings
         db.py               # SQLAlchemy engine, SessionLocal, Base, get_db dependency
         models.py           # SQLAlchemy ORM table definitions
         schemas.py           # Pydantic request/response models
         routers/             # one file per resource — HTTP concerns only
         repositories/         # one file per resource — SQLAlchemy queries, see "Data access layer"
+        providers/             # LLM adapters — see "LLM calls and the logging SDK"
+          base.py               # ChatProvider ABC, ProviderResult, ProviderError
+          openai.py              # OpenAIProvider — never imported outside __init__.py
+          logged.py               # LoggingChatProvider decorator (the only one handed out)
+        logging_sdk/              # portable — imports NOTHING from app.*
+          contract.py              # InstrumentedProvider ABC, CallContext/Outcome/Failure
+          events.py                 # InferenceLogEvent, LogStatus, config_hash, processors
+          publisher.py               # EventPublisher ABC, HTTPEventPublisher
+          recorder.py                 # CallRecorder — the single emission point
       alembic/                # migration scripts — see "Database migrations"
       tests/
         conftest.py           # isolated in-memory DB + `client` fixture
@@ -115,11 +138,79 @@ established by the `conversations` feature (spec 001):
   this pattern doesn't trip bugbear's B008 — no per-feature lint config
   needed.
 
-This is the one deliberate exception to "no premature abstraction"
-below: apply it to every new resource from the start, not just once a
-second caller of the same queries appears. It keeps routers focused on
-HTTP concerns (request/response, status codes, error translation) and
-keeps query logic independently testable and reusable outside FastAPI.
+This is a deliberate exception to "no premature abstraction" below:
+apply it to every new resource from the start, not just once a second
+caller of the same queries appears. It keeps routers focused on HTTP
+concerns (request/response, status codes, error translation) and keeps
+query logic independently testable and reusable outside FastAPI.
+
+## LLM calls and the logging SDK
+
+Every model call must produce exactly one inference log. That is
+guaranteed **structurally**, not by convention — there is no "remember to
+use the logging function" rule, because there is no unlogged path to
+forget. Spec 006 is the source of truth; the rules that matter day to day:
+
+**Making an LLM call.** Take a `ChatProvider` and call it. Nothing else:
+
+    provider: ChatProvider = Depends(get_chat_provider)   # or get_title_provider()
+    result = await provider.send_message(
+        messages, system=..., model=..., max_tokens=...,
+        temperature=..., conversation_id=...,
+    )
+
+The object you get back is a `LoggingChatProvider` wrapping the real
+adapter. The call site does not know that, does not import
+`app.logging_sdk`, and does not inject a publisher. Do **not** write a
+`logged_chat(...)`-style helper, a second wrapper, or a "log this call"
+utility — if you need a logged call, you need a provider, and every
+provider is logged.
+
+**Adding a provider adapter.** Subclass `ChatProvider` in
+`app/providers/<vendor>.py` and add one `case` to `_build()`. The ABC
+forces you to supply everything the SDK records:
+
+| Member | What it is for |
+|---|---|
+| `provider_name` | The `provider` value on every event |
+| `send_message()` | The call itself; maps params to the vendor API |
+| `describe_call()` | What is about to be sent → `CallContext` (rendered `input_messages` with the system prompt first, `request_params`, model) |
+| `describe_outcome()` | The vendor's success shape → `CallOutcome` (tokens, text, `provider_metadata`) |
+| `describe_failure()` | An exception → `CallFailure` (`error_type`, `error_message`) |
+
+Two mappings, deliberately separate: `_build_request()` says what the
+*vendor* gets, `describe_call()` says what the *log* gets. A parameter can
+appear in one and not the other — `temperature` is recorded but not sent,
+because GPT-5 models reject it. Do not export the new adapter, and do not
+give the SDK a fallback for a mapping you skipped; a missing `describe_*`
+is a `TypeError` at instantiation, which is the point.
+
+**Keeping the SDK portable.** `app/logging_sdk/` is written as if it were
+a separately published package. It imports the standard library,
+Pydantic and httpx — nothing from `app.*`. Host settings are read in
+`app/core/observability.py` and passed to `HTTPEventPublisher(url=...,
+timeout_seconds=...)`. The check is mechanical, so use it before calling
+a change done:
+
+    grep -rn "^from app\.\|^import app\." backend/app/logging_sdk/    # must be empty
+
+If you want `settings` inside the SDK, the answer is a constructor
+argument. If you want to enumerate this app's `CallType` inside the SDK,
+the answer is `str`.
+
+**Logging must never break chat.** Publishing is fire-and-forget
+(`asyncio.create_task`, never awaited); `publish()` and every `describe_*`
+call is wrapped so a logging failure produces an ERROR line and a lost
+event, never a failed or slowed request. This is the one place where "log
+and do not re-raise" is correct, and it is documented as such — it is not
+a licence to swallow exceptions elsewhere.
+
+The `EventPublisher` interface has one implementation today. It is not
+premature abstraction: the design doc records the Kafka publisher as a
+confirmed direction, and the interface is what keeps the SDK from
+depending on a transport. `EVENT_PROCESSORS` is an empty list plus a loop
+— do not build a registry, plugin discovery, or priority ordering around
+it.
 
 ## Design docs and feature specs
 

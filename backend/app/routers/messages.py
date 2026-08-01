@@ -63,6 +63,8 @@ async def send_message(
         system=settings.SYSTEM_PROMPT,
         model=settings.OPENAI_MODEL,
         max_tokens=settings.MAX_TOKENS,
+        temperature=settings.TEMPERATURE,
+        conversation_id=conversation_id,
     )
 
     if result.content.strip() == "":

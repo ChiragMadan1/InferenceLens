@@ -41,6 +41,15 @@ class Settings(BaseSettings):
 
     PROVIDER_TIMEOUT_SECONDS: int = 60
 
+    # Where the logging SDK's HTTPEventPublisher POSTs inference log events.
+    # Points at this same app in v1; becomes a separate host once ingestion
+    # is split out.
+    INGEST_URL: str = "http://localhost:8000/ingest/logs"
+
+    # httpx timeout for the ingest POST. Bounds how long a fire-and-forget
+    # background publish task can hang on a wedged ingestion endpoint.
+    INGEST_TIMEOUT_SECONDS: float = 5.0
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def _split_csv(cls, value: str | list[str]) -> str | list[str]:

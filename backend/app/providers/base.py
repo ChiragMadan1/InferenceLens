@@ -1,7 +1,9 @@
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, ClassVar, Literal, TypedDict
+
+from app.logging_sdk import CallContext, CallFailure, CallOutcome, InstrumentedProvider
 
 
 class Provider(StrEnum):
@@ -32,8 +34,14 @@ class ProviderError(Exception):
         self.status_code = status_code
 
 
-class ChatProvider(ABC):
-    name: ClassVar[Provider]
+class ChatProvider(InstrumentedProvider):
+    """The interface every adapter implements. Extends the logging SDK's
+    InstrumentedProvider (app.logging_sdk) — describe_call / describe_outcome
+    / describe_failure are what let CallRecorder log a call without this
+    interface, or the SDK, knowing anything about the other's internals.
+    """
+
+    provider_name: ClassVar[Provider]
 
     @abstractmethod
     async def send_message(
@@ -43,6 +51,8 @@ class ChatProvider(ABC):
         system: str,
         model: str,
         max_tokens: int,
+        temperature: float,
+        conversation_id: int | None = None,
     ) -> ProviderResult:
         """Send one chat request and return a normalized result.
 
@@ -58,7 +68,33 @@ class ChatProvider(ABC):
         fixed is this signature, the ProviderResult returned, and the
         ProviderError raised.
 
+        `temperature` and `conversation_id` exist for the log, not necessarily
+        the vendor call — see describe_call. Whether temperature reaches the
+        vendor API is the adapter's decision.
+
         Raises ProviderError on any provider failure. Must let
         asyncio.CancelledError propagate untouched.
         """
+        raise NotImplementedError
+
+    @abstractmethod
+    def describe_call(
+        self,
+        messages: list[ProviderMessage],
+        *,
+        system: str,
+        model: str,
+        max_tokens: int,
+        temperature: float,
+        conversation_id: int | None = None,
+    ) -> CallContext:
+        """Same arguments send_message receives. See InstrumentedProvider."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def describe_outcome(self, result: ProviderResult) -> CallOutcome:
+        raise NotImplementedError
+
+    @abstractmethod
+    def describe_failure(self, exc: BaseException) -> CallFailure:
         raise NotImplementedError

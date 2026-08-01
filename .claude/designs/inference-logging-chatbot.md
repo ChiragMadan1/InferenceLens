@@ -154,29 +154,45 @@ content on the detail endpoint).
 *(Kept in the doc because "how do such SDKs work" is part of the assignment's
 architecture-notes deliverable.)*
 
-**The core idea is a wrapper.** A logging SDK is a function that stands
-between your code and the provider's SDK. It takes the same inputs, records
-a timestamp, calls the real provider, and — whether the call succeeds, fails,
-or is cancelled — records what happened and forwards the result unchanged.
-The application code cannot tell it's there; that's the "middleware"
-property.
+**The core idea is a wrapper.** A logging SDK stands between your code and the
+provider's SDK. It takes the same inputs, records a timestamp, calls the real
+provider, and — whether the call succeeds, fails, or is cancelled — records what
+happened and forwards the result unchanged. The application code cannot tell
+it's there; that's the "middleware" property.
+
+**Where we put the wrapper is the load-bearing decision.** A wrapper the caller
+has to *choose* (`logged_chat(provider, ...)` instead of
+`provider.send_message(...)`) leaves both paths open forever: "is every LLM call
+logged?" becomes a question you re-answer at every call site, and the most
+natural thing a new developer can write is the unlogged one. So the wrapper is
+not a function callers pick — it is **an object that implements the provider
+interface and is the only provider anyone can obtain**:
 
 ```
-chat code ──> logged_chat(provider, messages)      # our wrapper
+chat code ──> provider.send_message(messages, ...)   # ordinary call, unchanged
+                 │   provider came from get_chat_provider(); it is a
+                 │   LoggingChatProvider, and no other kind is reachable
+                 ▼
+              CallRecorder.invoke(inner, call_type=..., **kwargs)
                  t0 = now()
-                 try:    result = provider.send_message(messages)  # real call
-                 except: capture error, re-raise
-                 finally: build event(latency=now()-t0, usage, status, content)
-                          publish(event)            # never blocks, never raises
+                 context = inner.describe_call(**kwargs)   # provider self-describes
+                 try:    result = inner.send_message(**kwargs)   # real call
+                         outcome = inner.describe_outcome(result)
+                 except: failure = inner.describe_failure(exc); re-raise
+                 finally: build event(latency=now()-t0, context, outcome, status)
+                          publish(event)              # never blocks, never raises
               <── result (untouched)
 ```
 
-**Ways the industry intercepts calls** (we use #1):
+**Ways the industry intercepts calls** (we use a typed variant of #2):
 
-1. **Explicit wrapper** — you call `logged_chat(...)` instead of the provider
-   directly. Simple, visible, testable. Ours.
-2. **Decorator / callback hooks** — annotate functions; the framework fires
-   hooks around them (Langfuse decorators, LangChain callbacks).
+1. **Explicit wrapper function** — you call `logged_chat(...)` instead of the
+   provider. Simple and visible, but opt-in: nothing stops the direct call, so
+   coverage is a convention, not a guarantee. Rejected for that reason.
+2. **Decorator** — the instrumented object *is* the interface, substituted at
+   the composition root (Langfuse's `OpenAI` drop-in, LangChain callbacks).
+   Ours: `LoggingChatProvider(ChatProvider)` is injected everywhere a
+   `ChatProvider` is expected, so instrumentation is structural.
 3. **Monkey-patching (auto-instrumentation)** — the SDK patches the provider
    library's methods at import time so *all* calls are captured with zero
    code changes (OpenLLMetry). Magical but fragile across SDK versions.
@@ -184,11 +200,32 @@ chat code ──> logged_chat(provider, messages)      # our wrapper
    and forwards (Helicone). Zero code change, adds a network hop and a
    critical dependency on the proxy's uptime.
 
+Approach #2 buys #3's "every call is captured" guarantee without #3's fragility:
+the swap happens in one function we own (`get_chat_provider()`), not inside a
+third-party library's namespace.
+
+**The SDK never assumes anything about a provider.** It does not infer a
+provider name from a class, reach into a result for `usage.input_tokens`, or
+`isinstance`-check exception types. It asks, through three abstract methods the
+provider ABC forces every adapter to implement — `describe_call`,
+`describe_outcome`, `describe_failure`. Everything on an event comes from what
+the adapter returned or from the SDK's own clock; adding a provider adds
+mappings and changes zero SDK code.
+
+**The SDK does not import the application.** `app/logging_sdk/` imports only the
+standard library, Pydantic and httpx — no settings, no models, no schemas, no
+provider types. Configuration arrives as constructor arguments (the ingest URL
+and timeout are passed in by `app/core/observability.py`, the host's composition
+root) and provider knowledge arrives through the ABC. The package can be lifted
+into another codebase, or split into its own service, unchanged. The ~20-line
+`LoggingChatProvider` shim is the only host-specific piece, because only the host
+knows its own `send_message` signature.
+
 **When exactly our SDK fires:** one event per provider call — chat calls and
-titling calls alike. The event is assembled in the wrapper's `finally` path
-after the call resolves (success, error, or cancellation), and published via
-a fire-and-forget async task so the chat response is never delayed by
-logging. There is exactly one emission point in the codebase.
+titling calls alike. The event is assembled in `CallRecorder.invoke`'s `finally`
+path after the call resolves (success, error, or cancellation), and published via
+a fire-and-forget async task so the chat response is never delayed by logging.
+There is exactly one emission point in the codebase.
 
 **How these SDKs behave at scale** (v1 doesn't need this; the interface
 allows it): production SDKs never send one HTTP request per event. They push
@@ -256,6 +293,12 @@ how Langfuse/OTel handle the same problem.
    conversation; failures leave the default title.
 9. FR9: The SDK publishes events through an `EventPublisher` interface; the
    chat code never talks to the ingestion API or DB for logging directly.
+9a. FR9a: Every LLM call is instrumented **structurally** — the only provider
+   obtainable from `app.providers` is an already-decorated one, so a call site
+   cannot opt out and no "remember to use the logging path" rule exists.
+9b. FR9b: The SDK package imports nothing from the application. Configuration
+   arrives as constructor arguments and provider knowledge arrives through an
+   ABC the host implements, so the package is reusable in another codebase.
 10. FR10: The ingestion endpoint validates incoming payloads (Pydantic
     schema, versioned via `schema_version`), rejects malformed ones with
     422, and stores valid ones.
@@ -619,18 +662,30 @@ mirroring these schema names.
 ## Architecture & design patterns
 
 ```
-chat router ──> ChatOrchestrator
-     │              ├── ChatProvider (interface)          [Strategy/Adapter]
-     │              │    selected by PROVIDER: Provider enum in get_chat_provider()
-     │              │      ├── OpenAIProvider (v1) ── normalizes → ProviderResult
-     │              │      └── AnthropicProvider (future) ── same interface
-     │              ├── logged_chat() wrapper             [Decorator]
-     │              │      └── EventPublisher (interface) [Dependency inversion]
+chat router ──> provider: ChatProvider = Depends(get_chat_provider)
+     │            await provider.send_message(...)      ← caller sees only this
+     │
+     │          get_chat_provider() is the composition root; it returns
+     │          exactly one kind of object, and the raw adapter is not exported:
+     │
+     │          LoggingChatProvider(ChatProvider)        [Decorator]
+     │              ├── CallRecorder (SDK)               [single emission point]
+     │              │      ├── InstrumentedProvider ABC  [Dependency inversion]
+     │              │      │     describe_call / describe_outcome / describe_failure
+     │              │      └── EventPublisher (interface)
      │              │             ├── HTTPEventPublisher (v1) ──POST──> /ingest/logs
      │              │             └── KafkaEventPublisher (future) ──> broker ──> consumer
-     │              └── in-flight registry (cancel)
-     ├── auto-title background task ──(same logged path, call_type=title)
+     │              └── inner: ChatProvider (interface)  [Strategy/Adapter]
+     │                     selected by PROVIDER: Provider enum
+     │                       ├── OpenAIProvider (v1) ── normalizes → ProviderResult
+     │                       └── AnthropicProvider (future) ── same interface
+     │
+     ├── in-flight registry (cancel)
+     ├── auto-title background task ──> get_title_provider() (same path, call_type=title)
      └── conversations / messages tables        /ingest ──> inference_logs table
+
+app/logging_sdk/  ──  imports nothing from app.*  ──  portable / liftable
+app/core/observability.py  ──  the only place host settings meet the SDK
 ```
 
 Patterns in play, and why each earns its place (per the project's
@@ -639,16 +694,25 @@ future):
 
 - **Strategy + Adapter** — `ChatProvider` implementations normalize each
   provider's native API into `ProviderResult`, behind a single
-  `send_message()` method. Justified by the confirmed multi-provider
-  direction; it is also what makes logging provider-agnostic. The strategy is
-  chosen by a `Provider` enum read from the `PROVIDER` setting, so selection
-  happens in exactly one function (`get_chat_provider()`) and the same enum
-  value is what lands in the log's `provider` column.
-- **Decorator** — `logged_chat()` wraps any `ChatProvider` without the
-  provider or the chat code knowing. One emission point; providers get
-  logging for free (the "auto-instrumentation" story).
-- **Dependency inversion** — chat depends on the `EventPublisher` interface,
-  never a transport. The Kafka future is a DI swap.
+  `send_message()` method, and describe themselves to the SDK through
+  `describe_call` / `describe_outcome` / `describe_failure`. Justified by the
+  confirmed multi-provider direction; it is also what makes logging
+  provider-agnostic. The strategy is chosen by a `Provider` enum read from the
+  `PROVIDER` setting, so selection happens in exactly one function
+  (`get_chat_provider()`) and the adapter's own `provider_name` is what lands in
+  the log's `provider` column.
+- **Decorator** — `LoggingChatProvider` *implements* `ChatProvider` and wraps
+  one, so it substitutes anywhere a provider is expected and neither the
+  adapter nor the chat code knows it exists. Because `get_chat_provider()` is
+  the only accessor and the concrete adapter is not exported, this is not a
+  convention a call site can forget — instrumentation is structural. One
+  emission point; providers get logging for free (the "auto-instrumentation"
+  story, without the monkey-patching).
+- **Dependency inversion, both ways** — the SDK depends on the `EventPublisher`
+  interface, never a transport (the Kafka future is a one-line swap in the
+  composition root); and it depends on the `InstrumentedProvider` ABC, never on
+  a concrete provider or on host config, which is what keeps the package
+  portable across codebases.
 - **Versioned schema contract** — `InferenceLogEvent` (Pydantic, with
   `schema_version`) is the *only* thing producer and consumer share. This is
   what makes the later service split safe.
@@ -717,11 +781,13 @@ Each item is one `/generate-spec` spec and one implementation pass.
    params/config_hash columns); `POST /ingest/logs` with versioned-schema
    validation, request_id idempotency, and cost computation from the price
    map. Independent of 001–004.
-6. **006-logging-sdk** — `InferenceLogEvent` schema, `EventPublisher`
-   interface + processor-chain hook (no processors registered),
-   `HTTPEventPublisher`, `logged_chat()` wrapper capturing params +
-   config_hash; wire into the chat endpoint (success/error paths). Needs
-   004 and 005.
+6. **006-logging-sdk** — portable `app/logging_sdk/` package: `InferenceLogEvent`
+   schema, `InstrumentedProvider` contract, `EventPublisher` interface +
+   processor-chain hook (no processors registered), `HTTPEventPublisher`, and
+   `CallRecorder` (the single emission point) capturing params + config_hash.
+   Host side: `ChatProvider` extends the SDK contract, `LoggingChatProvider`
+   shim, `get_chat_provider()` returns an instrumented provider, publisher built
+   in `app/core/observability.py` from settings. Needs 003, 004 and 005.
 7. **007-logs-api** — `GET /logs` (paginated, filters, computed previews) +
    `GET /logs/{request_id}` (full content). Needs 005.
 8. **008-auto-title** — background titling task after first turn, through
