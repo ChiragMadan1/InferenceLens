@@ -102,3 +102,43 @@ export async function listConversations(
 export async function getConversation(id: number): Promise<ConversationRead> {
   return request<ConversationRead>(`/conversations/${id}`)
 }
+
+export type MessageRole = 'user' | 'assistant'
+
+export type MessageRead = {
+  id: number
+  conversation_id: number
+  role: MessageRole
+  content: string
+  created_at: string
+}
+
+export type MessageCreate = {
+  content: string
+}
+
+export type ChatTurnRead = {
+  user_message: MessageRead
+  assistant_message: MessageRead
+}
+
+export async function listMessages(
+  conversationId: number,
+  limit: number,
+  offset: number,
+): Promise<Page<MessageRead>> {
+  const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  return request<Page<MessageRead>>(`/conversations/${conversationId}/messages?${qs}`)
+}
+
+export async function sendMessage(
+  conversationId: number,
+  content: string,
+): Promise<ChatTurnRead> {
+  const body: MessageCreate = { content }
+  return request<ChatTurnRead>(`/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
