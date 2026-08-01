@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
+from app.providers.base import ProviderError
 from app.schemas import ErrorResponse
 
 logger = logging.getLogger(__name__)
@@ -24,4 +25,21 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=409,
             content=ErrorResponse(detail="A conflicting record already exists.").model_dump(),
+        )
+
+    @app.exception_handler(ProviderError)
+    async def provider_error_handler(request: Request, exc: ProviderError) -> JSONResponse:
+        logger.error(
+            "Provider call failed on %s %s: error_type=%s status_code=%s message=%s",
+            request.method,
+            request.url.path,
+            exc.error_type,
+            exc.status_code,
+            exc.message,
+        )
+        return JSONResponse(
+            status_code=502,
+            content=ErrorResponse(
+                detail=f"The model provider failed to respond ({exc.error_type})."
+            ).model_dump(),
         )

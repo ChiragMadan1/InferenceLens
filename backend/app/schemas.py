@@ -59,3 +59,20 @@ class MessageRead(BaseModel):
     role: MessageRole
     content: str
     created_at: datetime
+
+
+class MessageCreate(BaseModel):
+    content: str
+
+    @field_validator("content")
+    @classmethod
+    def _strip_and_require_nonblank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("content must not be empty or whitespace-only")
+        return v
+
+
+class ChatTurnRead(BaseModel):
+    user_message: MessageRead
+    assistant_message: MessageRead

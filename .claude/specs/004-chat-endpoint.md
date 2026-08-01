@@ -19,7 +19,7 @@ leaves the user's message stored so they can retry without retyping.
 
 - **Inference logging is NOT wired here.** Spec 006 introduces
   `InferenceLogEvent`, `EventPublisher`, and the `logged_chat()` wrapper, and
-  swaps the direct `provider.complete(...)` call for `logged_chat(provider, ...)`.
+  swaps the direct `provider.send_message(...)` call for `logged_chat(provider, ...)`.
   Do not emit events, mint `request_id`s, compute `config_hash`, or measure
   latency in this spec. Half-building it here creates a second emission point,
   which is precisely what the design doc forbids.
@@ -39,7 +39,7 @@ leaves the user's message stored so they can retry without retyping.
 Both attach to the same few lines in the router — the spec is written so they
 are additive, not surgical:
 
-- **006** replaces `result = await provider.complete(...)` with
+- **006** replaces `result = await provider.send_message(...)` with
   `result = await logged_chat(provider, ...)`, passing the same arguments plus
   `call_type="chat"` and `conversation_id`. Nothing else in the handler moves.
 - **009** wraps that same awaitable in `asyncio.create_task(...)`, registers the
@@ -208,7 +208,7 @@ show); the raw provider message is logged, not returned.
    oldest-first. The secondary `id` sort matters — SQLite timestamps collide at
    sub-second resolution and an unstable sort would scramble turn order.
 4. Map rows → `list[ProviderMessage]`.
-5. `result = await provider.complete(messages=window, system=settings.SYSTEM_PROMPT, model=settings.ANTHROPIC_MODEL, max_tokens=settings.MAX_TOKENS)`
+5. `result = await provider.send_message(messages=window, system=settings.SYSTEM_PROMPT, model=settings.OPENAI_MODEL, max_tokens=settings.MAX_TOKENS)`
    — the single line specs 006 and 009 will wrap.
 6. If `result.content.strip() == ""` → `raise ProviderError("empty_response", "Provider returned no content.")`.
 7. `INSERT` the assistant message; set `conversation.updated_at = datetime.now(UTC)`;
@@ -238,7 +238,7 @@ that is 006's change, not this one.
 | 12 | Provider 5xx / overloaded | **502**, `(server_error)`. User message retained. |
 | 13 | Provider connection/DNS failure | **502**, `(connection)`. User message retained. |
 | 14 | Provider returns a response with no text content | **502**, `(empty_response)` per FR13. No assistant message is written; the user message stays. Rationale: `Message.content` is non-empty by contract, and an empty bubble is worse UX than a retryable error. |
-| 15 | `ANTHROPIC_API_KEY` missing **at startup** | The app does not boot — `Settings()` raises a pydantic `ValidationError` at import (spec 003, FR10). This endpoint never serves a request. Distinct from case 11, which is a running app with a bad key. |
+| 15 | `OPENAI_API_KEY` missing **at startup** | The app does not boot — `Settings()` raises a pydantic `ValidationError` at import (spec 003, FR10). This endpoint never serves a request. Distinct from case 11, which is a running app with a bad key. |
 | 16 | Second message sent while one is in flight | v1 behavior in **this** spec: both proceed independently; the second may build its window before the first assistant reply lands. **Spec 009** replaces this with a **409**. Do not implement the 409 here. |
 | 17 | Provider succeeds but the assistant `INSERT` fails (e.g. `IntegrityError`) | The existing central `IntegrityError` handler returns **409**. The user message is already committed and survives. Rare; no router-level handling added. |
 | 18 | Request cancelled by the client mid-call | `asyncio.CancelledError` propagates; no assistant message is stored, the user message remains. Spec 009 makes this a deliberate, logged path. |
@@ -249,7 +249,7 @@ Tests are created **only** by the `generate-tests` skill, when the user invokes
 it. They use the `client` fixture from `tests/conftest.py`.
 
 **Provider stubbing (mandatory — no test may make a real API call):** define a
-`StubProvider(ChatProvider)` whose `complete()` returns a canned
+`StubProvider(ChatProvider)` whose `send_message()` returns a canned
 `ProviderResult` (or raises a canned `ProviderError`), and install it per-test
 with
 
@@ -257,9 +257,9 @@ with
 app.dependency_overrides[get_chat_provider] = lambda: stub
 ```
 
-clearing the override afterwards. Because `AnthropicProvider` is only ever built
-inside `get_chat_provider()`, overriding the dependency means the `anthropic`
-SDK is never touched. Tests must also ensure `ANTHROPIC_API_KEY` is present in
+clearing the override afterwards. Because `OpenAIProvider` is only ever built
+inside `get_chat_provider()`, overriding the dependency means the `openai`
+SDK is never touched. Tests must also ensure `OPENAI_API_KEY` is present in
 the environment before `app.main` is imported (`os.environ.setdefault(...)` at
 the top of `conftest.py`) — otherwise `Settings()` fails at import.
 
@@ -330,7 +330,7 @@ change), `app/providers/*` (spec 003 owns it), anything under `frontend/`.
 - **Order by `(created_at DESC, id DESC)`.** Timestamp-only ordering is unstable
   on SQLite for messages written in the same millisecond.
 - **Roles are `user`/`assistant` only.** The DB enum, the `ProviderMessage`
-  literal, and the Anthropic `messages` array agree exactly; the system prompt
+  literal, and the OpenAI Responses API `input` array agree exactly; the system prompt
   travels on its own channel (FR8).
 - **One line for the provider call.** Specs 006 and 009 both substitute on it.
   Do not inline it into a larger expression or split it across a helper chain.
