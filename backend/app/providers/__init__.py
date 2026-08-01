@@ -4,6 +4,7 @@ from app.providers.base import (
     ProviderError,
     ProviderMessage,
     ProviderResult,
+    ProviderStreamChunk,
 )
 from app.providers.logged import LoggingChatProvider
 
@@ -13,6 +14,7 @@ __all__ = [
     "ProviderError",
     "ProviderMessage",
     "ProviderResult",
+    "ProviderStreamChunk",
     "LoggingChatProvider",
     "get_chat_provider",
     "get_title_provider",

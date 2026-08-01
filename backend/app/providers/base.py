@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, ClassVar, Literal, TypedDict
@@ -24,6 +25,12 @@ class ProviderResult:
     provider: Provider
     stop_reason: str | None
     provider_metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ProviderStreamChunk:
+    delta: str
+    result: ProviderResult | None = None
 
 
 class ProviderError(Exception):
@@ -78,6 +85,30 @@ class ChatProvider(InstrumentedProvider):
         raise NotImplementedError
 
     @abstractmethod
+    async def stream_message(
+        self,
+        messages: list[ProviderMessage],
+        *,
+        system: str,
+        model: str,
+        max_tokens: int,
+        temperature: float,
+        conversation_id: int | None = None,
+    ) -> AsyncIterator[ProviderStreamChunk]:
+        """Same signature and contract as send_message, streamed.
+
+        Yields zero or more chunks with `result=None` (each carrying the next
+        slice of assistant text), followed by exactly one final chunk with
+        `result` populated (a full ProviderResult, whose `content` equals the
+        concatenation of every `delta` yielded). The generator then ends
+        normally — it does not yield anything after the final chunk.
+
+        Raises ProviderError on any provider failure. Must let
+        asyncio.CancelledError propagate untouched.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def describe_call(
         self,
         messages: list[ProviderMessage],
@@ -93,6 +124,13 @@ class ChatProvider(InstrumentedProvider):
 
     @abstractmethod
     def describe_outcome(self, result: ProviderResult) -> CallOutcome:
+        raise NotImplementedError
+
+    @abstractmethod
+    def describe_stream_outcome(self, chunks: list[ProviderStreamChunk]) -> CallOutcome:
+        """Same role as describe_outcome, given every chunk stream_message
+        yielded, in order. The last chunk's `result` is guaranteed non-None
+        per stream_message's contract."""
         raise NotImplementedError
 
     @abstractmethod

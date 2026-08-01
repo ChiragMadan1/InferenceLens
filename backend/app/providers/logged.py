@@ -1,7 +1,8 @@
+from collections.abc import AsyncIterator
 from typing import Any
 
 from app.logging_sdk import CallContext, CallFailure, CallOutcome, CallRecorder
-from app.providers.base import ChatProvider, ProviderMessage, ProviderResult
+from app.providers.base import ChatProvider, ProviderMessage, ProviderResult, ProviderStreamChunk
 
 
 class LoggingChatProvider(ChatProvider):
@@ -51,6 +52,28 @@ class LoggingChatProvider(ChatProvider):
             conversation_id=conversation_id,
         )
 
+    async def stream_message(
+        self,
+        messages: list[ProviderMessage],
+        *,
+        system: str,
+        model: str,
+        max_tokens: int,
+        temperature: float,
+        conversation_id: int | None = None,
+    ) -> AsyncIterator[ProviderStreamChunk]:
+        async for chunk in self._recorder.invoke_stream(
+            self._inner,
+            call_type=self._call_type,
+            messages=messages,
+            system=system,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            conversation_id=conversation_id,
+        ):
+            yield chunk
+
     # describe_* delegate to the wrapped adapter — CallRecorder calls these
     # on `inner` (see send_message above); they exist here only because
     # ChatProvider's ABC requires every concrete class to define them.
@@ -59,6 +82,9 @@ class LoggingChatProvider(ChatProvider):
 
     def describe_outcome(self, result: Any) -> CallOutcome:
         return self._inner.describe_outcome(result)
+
+    def describe_stream_outcome(self, chunks: list[Any]) -> CallOutcome:
+        return self._inner.describe_stream_outcome(chunks)
 
     def describe_failure(self, exc: BaseException) -> CallFailure:
         return self._inner.describe_failure(exc)

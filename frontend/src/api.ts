@@ -50,6 +50,12 @@ async function parseErrorDetail(res: Response): Promise<string> {
   return `HTTP ${res.status}`
 }
 
+// Shared with streamMessage (FR21) — its response body isn't JSON, so it
+// can't go through request<T>, but a non-ok status uses the same rules.
+async function buildApiError(res: Response): Promise<ApiError> {
+  return new ApiError(res.status, await parseErrorDetail(res))
+}
+
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = init?.method ?? 'GET'
   const t0 = performance.now()
@@ -63,7 +69,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
 
     if (!res.ok) {
-      throw new ApiError(res.status, await parseErrorDetail(res))
+      throw await buildApiError(res)
     }
     ok = true
 
@@ -122,6 +128,10 @@ export type ChatTurnRead = {
   assistant_message: MessageRead
 }
 
+export type StreamChunk = {
+  delta: string
+}
+
 export async function listMessages(
   conversationId: number,
   limit: number,
@@ -141,4 +151,82 @@ export async function sendMessage(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
+}
+
+// One complete `event: ...\ndata: ...` block, already split off the `\n\n`
+// framing separator (FR22). Returns null for a block missing either field —
+// malformed/unrecognized events are ignored, not thrown.
+function parseSseEvent(raw: string): { event: string; data: string } | null {
+  let event: string | null = null
+  let data: string | null = null
+  for (const line of raw.split('\n')) {
+    if (line.startsWith('event:')) event = line.slice('event:'.length).trim()
+    else if (line.startsWith('data:')) data = line.slice('data:'.length).trim()
+  }
+  if (event === null || data === null) return null
+  return { event, data }
+}
+
+// Raw fetch, not EventSource — EventSource cannot send a POST body (FR21).
+export async function streamMessage(
+  conversationId: number,
+  content: string,
+  handlers: {
+    onChunk: (delta: string) => void
+    onDone: (turn: ChatTurnRead) => void
+    onError: (detail: string) => void
+  },
+): Promise<void> {
+  const path = `/conversations/${conversationId}/messages/stream`
+  const t0 = performance.now()
+  let ok = false
+  try {
+    let res: Response
+    try {
+      res = await fetch(`${BASE_URL}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content } satisfies MessageCreate),
+      })
+    } catch {
+      throw new ApiError(0, 'Cannot reach the backend. Is it running?')
+    }
+
+    if (!res.ok) {
+      throw await buildApiError(res)
+    }
+    ok = true
+
+    const reader = res.body!.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      let separatorIndex: number
+      while ((separatorIndex = buffer.indexOf('\n\n')) !== -1) {
+        const rawEvent = buffer.slice(0, separatorIndex)
+        buffer = buffer.slice(separatorIndex + 2)
+        const parsed = parseSseEvent(rawEvent)
+        if (!parsed) continue // FR22 — unrecognized/malformed events ignored
+
+        if (parsed.event === 'chunk') {
+          handlers.onChunk((JSON.parse(parsed.data) as StreamChunk).delta)
+        } else if (parsed.event === 'done') {
+          handlers.onDone(JSON.parse(parsed.data) as ChatTurnRead)
+          void reader.cancel()
+          return
+        } else if (parsed.event === 'error') {
+          handlers.onError((JSON.parse(parsed.data) as { detail: string }).detail)
+          void reader.cancel()
+          return
+        }
+      }
+    }
+  } finally {
+    pushLatencyEntry({ method: 'POST', path, ms: performance.now() - t0, ok })
+  }
 }

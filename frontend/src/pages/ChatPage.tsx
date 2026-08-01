@@ -5,7 +5,8 @@ import {
   ApiError,
   getConversation,
   listMessages,
-  sendMessage,
+  streamMessage,
+  type ChatTurnRead,
   type MessageRead,
 } from '../api'
 import { useResource } from '../hooks/useResource'
@@ -48,12 +49,25 @@ function mapHistoryLoadError(err: ApiError | null): string {
   return err.detail || 'Something went wrong.'
 }
 
+// FR25 — the mid-stream provider-failure notice, reused verbatim from
+// 010's old 502 case. It's a fixed string, not derived from the SSE
+// error event's `detail`, because there's no HTTP status to key off once
+// streaming has started (see the endpoint's own "200 doesn't mean success"
+// contract).
+const MID_STREAM_FAILURE_NOTICE =
+  'The model provider failed to respond. Your message was saved — you can send it again.'
+
+// Maps a thrown ApiError from a pre-stream failure (404/409/422/status-0 —
+// FR11's validation, which all happen before a single SSE byte is sent).
+// 502 no longer appears here: the streaming endpoint never returns it, since
+// a post-start provider failure is reported via the `error` SSE event
+// (MID_STREAM_FAILURE_NOTICE above), not a thrown ApiError.
 function mapSendError(err: ApiError | null): string {
   if (!err) return 'Something went wrong. Your message may not have been saved.'
   if (err.status === 0) return 'Cannot reach the backend — your message may not have been saved.'
   if (err.status === 404) return 'This conversation no longer exists.'
-  if (err.status === 502) {
-    return 'The model provider failed to respond. Your message was saved — you can send it again.'
+  if (err.status === 409) {
+    return 'A response is already being generated for this conversation. Wait for it to finish.'
   }
   if (err.status === 422) return 'Message could not be sent (invalid content).'
   return err.detail || 'Something went wrong. Your message may not have been saved.'
@@ -104,8 +118,9 @@ function ChatPageContent({ conversationId }: { conversationId: number }) {
   const [gone, setGone] = useState(false)
 
   const [draft, setDraft] = useState('')
-  const [sending, setSending] = useState(false)
+  const [sending, setSending] = useState(false) // FR24 — now means "a stream is open"
   const [pendingUserText, setPendingUserText] = useState<string | null>(null)
+  const [streamingText, setStreamingText] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [liveAnnouncement, setLiveAnnouncement] = useState('')
 
@@ -201,13 +216,27 @@ function ChatPageContent({ conversationId }: { conversationId: number }) {
     }
   }, [historyLoading, gone, historyError, messages.length])
 
-  // "Send handler" — the four numbered steps from the spec, verbatim.
+  // "Send handler" — FR24's four numbered steps, adapted for streaming.
+  //
+  // pendingUserText and streamingText are cleared with different timing on
+  // failure: streamingText clears immediately in onError (the growing bubble
+  // is *replaced* by the error banner — edge case 6's expected UX), while
+  // pendingUserText stays set until the post-error resync's real messages
+  // are already on screen, then clears in this function's own tail — same
+  // "the optimistic entry is only dropped once the real state is on screen"
+  // ordering 010 used (its catch block awaited the resync directly before
+  // its finally cleared pendingUserText). Since onError/onDone's types are
+  // plain callbacks (not awaited by streamMessage — FR21), that ordering has
+  // to be reconstructed here via `needsResync` rather than inside the resync
+  // itself.
   async function handleSend() {
     if (sending || draft.trim() === '') return
     const content = draft.trim()
     setDraft('')
     scroll.markAppend()
+    scroll.beginStream()
     setPendingUserText(content)
+    setStreamingText('')
     setSending(true)
     setNotice(null)
     // Cleared here (a separate commit before the awaited send resolves) so
@@ -215,26 +244,54 @@ function ChatPageContent({ conversationId }: { conversationId: number }) {
     // real DOM change on the aria-live region and both get announced (FR11).
     setLiveAnnouncement('')
 
+    let needsResync = false
+
     try {
-      const turn = await sendMessage(conversationId, content)
-      if (!mountedRef.current) return
-      scroll.markAppend()
-      setMessages((prev) => [...prev, turn.user_message, turn.assistant_message])
-      setTotal((prev) => prev + 2)
-      setNotice(null)
-      setLiveAnnouncement(turn.assistant_message.content)
+      await streamMessage(conversationId, content, {
+        onChunk: (delta) => {
+          if (mountedRef.current) {
+            setStreamingText((prev) => (prev ?? '') + delta)
+          }
+        },
+        onDone: (turn: ChatTurnRead) => {
+          if (!mountedRef.current) return
+          scroll.endStream()
+          scroll.markAppend()
+          setMessages((prev) => [...prev, turn.user_message, turn.assistant_message])
+          setTotal((prev) => prev + 2)
+          setNotice(null)
+          setPendingUserText(null)
+          setStreamingText(null)
+          setLiveAnnouncement(turn.assistant_message.content)
+        },
+        onError: () => {
+          scroll.endStream()
+          needsResync = true
+          if (mountedRef.current) {
+            setStreamingText(null) // discard-partial — replaced by the notice below
+            setNotice({ kind: 'error', text: MID_STREAM_FAILURE_NOTICE })
+          }
+        },
+      })
     } catch (err) {
+      scroll.endStream()
+      needsResync = true
       const apiErr = err instanceof ApiError ? err : null
       if (mountedRef.current) {
+        setStreamingText(null)
         setNotice({ kind: 'error', text: mapSendError(apiErr) })
         if (apiErr?.status === 404) setGone(true)
       }
+    }
+
+    if (needsResync) {
       await loadNewestPage()
-    } finally {
-      if (mountedRef.current) {
-        setSending(false)
-        setPendingUserText(null)
-      }
+    }
+
+    if (mountedRef.current) {
+      setSending(false)
+      setPendingUserText(null)
+      setStreamingText(null)
     }
   }
 
@@ -382,7 +439,17 @@ function ChatPageContent({ conversationId }: { conversationId: number }) {
                 <MessageBubble role="user" content={pendingUserText} pending />
               )}
 
-              {sending && <PendingIndicator />}
+              {/* FR27 — before the first chunk, streamingText is still '',
+                  so the indicator shows; the first onChunk call makes it
+                  non-empty and the growing bubble takes over. Both read from
+                  the same MessageBubble presentation (fenced-code split runs
+                  again on every re-render) as a stored message. */}
+              {streamingText !== null &&
+                (streamingText === '' ? (
+                  <PendingIndicator />
+                ) : (
+                  <MessageBubble role="assistant" content={streamingText} pending />
+                ))}
             </div>
           )}
         </ScrollArea>

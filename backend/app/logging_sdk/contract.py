@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -49,6 +50,11 @@ class InstrumentedProvider(ABC):
         """The call being instrumented."""
 
     @abstractmethod
+    async def stream_message(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
+        """The streaming call being instrumented. Yields opaque chunks in
+        order; interpreted only by describe_stream_outcome."""
+
+    @abstractmethod
     def describe_call(self, *args: Any, **kwargs: Any) -> CallContext:
         """Same arguments send_message receives. Return what is about to be
         sent, rendered exactly as the model will see it."""
@@ -56,6 +62,11 @@ class InstrumentedProvider(ABC):
     @abstractmethod
     def describe_outcome(self, result: Any) -> CallOutcome:
         """Map this provider's own success type into the canonical shape."""
+
+    @abstractmethod
+    def describe_stream_outcome(self, chunks: list[Any]) -> CallOutcome:
+        """Same role as describe_outcome, given every chunk stream_message
+        yielded, in order."""
 
     @abstractmethod
     def describe_failure(self, exc: BaseException) -> CallFailure:

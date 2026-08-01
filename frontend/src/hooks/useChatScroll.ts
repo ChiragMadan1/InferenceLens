@@ -12,6 +12,8 @@ export type ChatScroll = {
   markAppend: () => void
   markPrependStart: () => void
   jumpToLatest: () => void
+  beginStream: () => void
+  endStream: () => void
 }
 
 // FR17's scroll rules, kept out of ChatPage's render body. Each `mark*`
@@ -30,6 +32,10 @@ export function useChatScroll(): ChatScroll {
   const pendingAppendRef = useRef(false)
   const nearBottomAtMarkRef = useRef(true)
   const pendingPrependAnchorRef = useRef<number | null>(null)
+  // FR28 — sustained bottom anchor for a stream's whole duration, captured
+  // once at stream start rather than re-measured per chunk (that would
+  // fight a reader who scrolled up mid-stream).
+  const streamPinnedRef = useRef(false)
 
   const isNearBottom = () => {
     const el = containerRef.current
@@ -61,6 +67,17 @@ export function useChatScroll(): ChatScroll {
     setUnreadCount(0)
   }
 
+  // FR28 — captured at the moment a stream starts, before the optimistic
+  // user bubble/pending indicator even render, so "was the reader at the
+  // bottom" reflects the pre-stream view.
+  const beginStream = () => {
+    streamPinnedRef.current = isNearBottom()
+  }
+
+  const endStream = () => {
+    streamPinnedRef.current = false
+  }
+
   useLayoutEffect(() => {
     if (pendingInitialLoadRef.current) {
       pendingInitialLoadRef.current = false
@@ -74,6 +91,14 @@ export function useChatScroll(): ChatScroll {
       const before = pendingPrependAnchorRef.current
       pendingPrependAnchorRef.current = null
       if (el) el.scrollTop += el.scrollHeight - before
+      return
+    }
+
+    // No dependency array on this effect — it re-runs after every render,
+    // so as long as the pin is armed it re-asserts the bottom anchor on
+    // each streamingText-driven render without a smooth-scroll-per-chunk.
+    if (streamPinnedRef.current) {
+      scrollToBottom(false)
       return
     }
 
@@ -107,5 +132,7 @@ export function useChatScroll(): ChatScroll {
     markAppend,
     markPrependStart,
     jumpToLatest,
+    beginStream,
+    endStream,
   }
 }

@@ -1,4 +1,5 @@
 import logging
+from collections.abc import AsyncIterator
 from typing import Any
 
 import openai
@@ -11,6 +12,7 @@ from app.providers.base import (
     ProviderError,
     ProviderMessage,
     ProviderResult,
+    ProviderStreamChunk,
 )
 
 logger = logging.getLogger(__name__)
@@ -130,6 +132,135 @@ class OpenAIProvider(ChatProvider):
 
         return self._map_response(response)
 
+    async def stream_message(
+        self,
+        messages: list[ProviderMessage],
+        *,
+        system: str,
+        model: str,
+        max_tokens: int,
+        temperature: float,
+        conversation_id: int | None = None,
+    ) -> AsyncIterator[ProviderStreamChunk]:
+        request = self._build_request(messages, system=system, model=model, max_tokens=max_tokens)
+        try:
+            stream = await self._client.responses.create(**request, stream=True)
+            async for event in stream:
+                if event.type == "response.output_text.delta":
+                    yield ProviderStreamChunk(delta=event.delta)
+                elif event.type in ("response.completed", "response.incomplete"):
+                    # Both carry a full Response object on `.response`, the same
+                    # shape _map_response already consumes for the non-streaming
+                    # path (verified against openai==2.52.0) — an incomplete
+                    # response (e.g. max_tokens truncation) is not a failure,
+                    # exactly as send_message treats it.
+                    yield ProviderStreamChunk(delta="", result=self._map_response(event.response))
+                elif event.type == "response.failed":
+                    error = event.response.error
+                    error_type = error.code if error is not None else "unknown"
+                    error_message = error.message if error is not None else "Response failed."
+                    logger.error(
+                        "OpenAI streaming response failed",
+                        extra={
+                            "provider": self.provider_name,
+                            "model": model,
+                            "error_type": error_type,
+                        },
+                    )
+                    raise ProviderError(error_type, _truncate(error_message))
+        except openai.APITimeoutError as exc:
+            logger.error(
+                "OpenAI request timed out",
+                extra={"provider": self.provider_name, "model": model, "error_type": "timeout"},
+            )
+            raise ProviderError("timeout", _truncate(str(exc))) from exc
+        except openai.APIConnectionError as exc:
+            logger.error(
+                "OpenAI connection failed",
+                extra={"provider": self.provider_name, "model": model, "error_type": "connection"},
+            )
+            raise ProviderError("connection", _truncate(str(exc))) from exc
+        except openai.RateLimitError as exc:
+            logger.error(
+                "OpenAI rate limited",
+                extra={"provider": self.provider_name, "model": model, "error_type": "rate_limit"},
+            )
+            raise ProviderError("rate_limit", _truncate(str(exc)), status_code=429) from exc
+        except openai.AuthenticationError as exc:
+            logger.error(
+                "OpenAI authentication failed",
+                extra={
+                    "provider": self.provider_name,
+                    "model": model,
+                    "error_type": "authentication",
+                },
+            )
+            raise ProviderError("authentication", _truncate(str(exc)), status_code=401) from exc
+        except openai.PermissionDeniedError as exc:
+            logger.error(
+                "OpenAI permission denied",
+                extra={"provider": self.provider_name, "model": model, "error_type": "permission"},
+            )
+            raise ProviderError("permission", _truncate(str(exc)), status_code=403) from exc
+        except openai.NotFoundError as exc:
+            logger.error(
+                "OpenAI resource not found",
+                extra={"provider": self.provider_name, "model": model, "error_type": "not_found"},
+            )
+            raise ProviderError("not_found", _truncate(str(exc)), status_code=404) from exc
+        except openai.ConflictError as exc:
+            logger.error(
+                "OpenAI conflict",
+                extra={"provider": self.provider_name, "model": model, "error_type": "conflict"},
+            )
+            raise ProviderError("conflict", _truncate(str(exc)), status_code=409) from exc
+        except openai.UnprocessableEntityError as exc:
+            logger.error(
+                "OpenAI unprocessable request",
+                extra={
+                    "provider": self.provider_name,
+                    "model": model,
+                    "error_type": "invalid_request",
+                },
+            )
+            raise ProviderError("invalid_request", _truncate(str(exc)), status_code=422) from exc
+        except openai.BadRequestError as exc:
+            logger.error(
+                "OpenAI bad request",
+                extra={
+                    "provider": self.provider_name,
+                    "model": model,
+                    "error_type": "invalid_request",
+                },
+            )
+            raise ProviderError("invalid_request", _truncate(str(exc)), status_code=400) from exc
+        except openai.InternalServerError as exc:
+            logger.error(
+                "OpenAI server error",
+                extra={
+                    "provider": self.provider_name,
+                    "model": model,
+                    "error_type": "server_error",
+                },
+            )
+            raise ProviderError(
+                "server_error", _truncate(str(exc)), status_code=exc.status_code
+            ) from exc
+        except openai.APIStatusError as exc:
+            logger.error(
+                "OpenAI API error",
+                extra={"provider": self.provider_name, "model": model, "error_type": "api_error"},
+            )
+            raise ProviderError(
+                "api_error", _truncate(str(exc)), status_code=exc.status_code
+            ) from exc
+        except openai.OpenAIError as exc:
+            logger.error(
+                "OpenAI unknown error",
+                extra={"provider": self.provider_name, "model": model, "error_type": "unknown"},
+            )
+            raise ProviderError("unknown", _truncate(str(exc))) from exc
+
     def _build_request(
         self,
         messages: list[ProviderMessage],
@@ -226,6 +357,10 @@ class OpenAIProvider(ChatProvider):
             output_tokens=result.output_tokens,
             provider_metadata=result.provider_metadata,
         )
+
+    def describe_stream_outcome(self, chunks: list[ProviderStreamChunk]) -> CallOutcome:
+        final = chunks[-1].result  # guaranteed non-None per stream_message's contract
+        return self.describe_outcome(final)
 
     def describe_failure(self, exc: BaseException) -> CallFailure:
         if isinstance(exc, ProviderError):

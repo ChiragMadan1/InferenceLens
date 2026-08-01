@@ -81,6 +81,10 @@ class ChatTurnRead(BaseModel):
     assistant_message: MessageRead
 
 
+class StreamChunk(BaseModel):
+    delta: str
+
+
 class CallType(StrEnum):
     CHAT = "chat"
     TITLE = "title"
