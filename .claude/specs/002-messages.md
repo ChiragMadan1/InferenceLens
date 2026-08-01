@@ -24,7 +24,7 @@ serves both listing and spec 004's context-window query, and **one** endpoint:
   exactly one route. Spec 004 adds the `POST` to that same file later.
 - No message create, update, or delete of any kind. Messages are written only by
   spec 004 (and spec 008 writes no messages at all).
-- No LLM call, no provider adapter, no `anthropic` dependency (spec 003).
+- No LLM call, no provider adapter, no `openai` dependency (spec 003).
 - No inference logging (specs 005–007). A message row and a log row are
   independent by design — logs store their own denormalized copy of content and
   never reference `messages`.

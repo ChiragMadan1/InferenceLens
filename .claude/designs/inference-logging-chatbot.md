@@ -3,7 +3,7 @@
 ## Problem statement
 
 Build a lightweight LLM inference logging and ingestion system around a working
-chatbot (source: `notes.md`). A user chats with a Claude-backed assistant in a
+chatbot (source: `notes.md`). A user chats with an LLM-backed assistant in a
 web UI; every model call is captured by a logging SDK/wrapper that emits an
 inference event through an event-publisher abstraction to an ingestion API,
 which validates and stores the log in the database alongside the chat data.
@@ -70,8 +70,10 @@ if multi-call turns (e.g. tool use) arrive.
 
 **In scope:**
 
-- Multi-turn chatbot backed by the Anthropic API, with a pluggable provider
-  adapter (multi-provider-ready, single provider implemented).
+- Multi-turn chatbot backed by the OpenAI API (Responses API), with a
+  pluggable provider adapter (multi-provider-ready, single provider
+  implemented). Anthropic is the intended second adapter — designed for, not
+  built in v1.
 - Logging SDK: a wrapper around provider calls that captures inference
   metadata and publishes events via an `EventPublisher` interface.
   V1 transport: HTTP POST to the ingestion endpoint. Kafka publisher is a
@@ -162,7 +164,7 @@ property.
 ```
 chat code ──> logged_chat(provider, messages)      # our wrapper
                  t0 = now()
-                 try:    result = provider.complete(messages)   # real call
+                 try:    result = provider.send_message(messages)  # real call
                  except: capture error, re-raise
                  finally: build event(latency=now()-t0, usage, status, content)
                           publish(event)            # never blocks, never raises
@@ -200,11 +202,15 @@ for a batching or Kafka publisher changes none of the call sites.
 
 ## Cross-provider normalization
 
-Every provider returns a differently-shaped response: Anthropic reports
-`usage.input_tokens`/`output_tokens` (plus cache token fields), OpenAI uses
-`prompt_tokens`/`completion_tokens`, Gemini nests `usageMetadata`; message
-formats, stop reasons, and error taxonomies all differ. The log schema must
-not absorb this variance.
+Every provider returns a differently-shaped response: OpenAI's Responses API
+reports `usage.input_tokens`/`output_tokens` with nested
+`input_tokens_details`/`output_tokens_details` and expresses "why generation
+stopped" as a `status` plus `incomplete_details.reason`; its older Chat
+Completions surface uses `prompt_tokens`/`completion_tokens` and a
+`finish_reason`; Anthropic reports `usage.input_tokens`/`output_tokens` plus
+cache token fields and a `stop_reason`; Gemini nests `usageMetadata`. Message
+formats and error taxonomies differ too. The log schema must not absorb this
+variance.
 
 The answer is the **adapter boundary**: each `ChatProvider` implementation
 maps its provider's native response into a canonical `ProviderResult`
@@ -312,8 +318,8 @@ paginated listing.
 | schema_version    | int      | event contract version (1); lets a future consumer handle old events |
 | conversation_id   | int, nullable, **no FK** | linkage metadata from the event payload |
 | call_type         | str enum | `chat` \| `title` (extensible)                     |
-| model             | str      | e.g. `claude-opus-5`                               |
-| provider          | str      | e.g. `anthropic`                                   |
+| model             | str      | e.g. `gpt-5.6-terra`                               |
+| provider          | str      | e.g. `openai`                                      |
 | status            | str enum | `success` \| `error` \| `cancelled`                |
 | latency_ms        | int      | wall-clock of the provider call                    |
 | input_tokens      | int, nullable | canonical (OTel GenAI naming); null on error/cancel |
@@ -615,7 +621,9 @@ mirroring these schema names.
 ```
 chat router ──> ChatOrchestrator
      │              ├── ChatProvider (interface)          [Strategy/Adapter]
-     │              │      └── AnthropicProvider ── normalizes → ProviderResult
+     │              │    selected by PROVIDER: Provider enum in get_chat_provider()
+     │              │      ├── OpenAIProvider (v1) ── normalizes → ProviderResult
+     │              │      └── AnthropicProvider (future) ── same interface
      │              ├── logged_chat() wrapper             [Decorator]
      │              │      └── EventPublisher (interface) [Dependency inversion]
      │              │             ├── HTTPEventPublisher (v1) ──POST──> /ingest/logs
@@ -630,8 +638,12 @@ no-premature-abstraction rule, each has ≥2 concrete uses or a user-confirmed
 future):
 
 - **Strategy + Adapter** — `ChatProvider` implementations normalize each
-  provider's native API into `ProviderResult`. Justified by the confirmed
-  multi-provider direction; it is also what makes logging provider-agnostic.
+  provider's native API into `ProviderResult`, behind a single
+  `send_message()` method. Justified by the confirmed multi-provider
+  direction; it is also what makes logging provider-agnostic. The strategy is
+  chosen by a `Provider` enum read from the `PROVIDER` setting, so selection
+  happens in exactly one function (`get_chat_provider()`) and the same enum
+  value is what lands in the log's `provider` column.
 - **Decorator** — `logged_chat()` wraps any `ChatProvider` without the
   provider or the chat code knowing. One emission point; providers get
   logging for free (the "auto-instrumentation" story).
@@ -646,9 +658,9 @@ Deliberately **not** used: plugin registries, generic middleware chains,
 repository layers over SQLAlchemy — single-use abstractions the project
 conventions prohibit.
 
-Model configurable via `ANTHROPIC_MODEL` env (default `claude-opus-5`);
-key via `ANTHROPIC_API_KEY`. Titling uses the same provider with
-cheap/fast settings.
+Model configurable via `OPENAI_MODEL` env (default `gpt-5.6-terra`);
+key via `OPENAI_API_KEY`. Titling uses the same provider with
+cheap/fast settings (`OPENAI_TITLE_MODEL`, default `gpt-5.6-luna`).
 
 ## Edge cases
 
@@ -694,9 +706,10 @@ Each item is one `/generate-spec` spec and one implementation pass.
    No dependencies.
 2. **002-messages** — Message model + migration; GET messages endpoint
    (paginated). Needs 001.
-3. **003-provider-adapter** — `ChatProvider` interface, `ProviderResult`
-   normalization, `AnthropicProvider`, settings (`ANTHROPIC_API_KEY`,
-   `ANTHROPIC_MODEL`); no endpoints. Independent.
+3. **003-provider-adapter** — `ChatProvider` interface (`send_message()`),
+   `ProviderResult` normalization, `Provider` enum + enum-dispatched
+   `get_chat_provider()`, `OpenAIProvider`, settings (`PROVIDER`,
+   `OPENAI_API_KEY`, `OPENAI_MODEL`); no endpoints. Independent.
 4. **004-chat-endpoint** — POST messages endpoint: store user message, build
    10-message window, call provider, store + return assistant reply;
    `ProviderError` → 502 translation. Needs 002 and 003.
@@ -729,9 +742,11 @@ Each item is one `/generate-spec` spec and one implementation pass.
 
 ## Open questions
 
-- **Anthropic model default**: assumed `claude-opus-5` for chat, overridable
-  via env; titling uses the same provider with fast/cheap settings. Confirm
-  if a cheaper chat default is preferred for demo traffic.
+- **OpenAI model default**: confirmed `gpt-5.6-terra` for chat (the balanced
+  cost/intelligence tier, chosen over the `gpt-5.6-sol` flagship for demo
+  traffic), overridable via env; titling uses `gpt-5.6-luna` on the same
+  provider. Sampling parameters (`temperature`, `top_p`) are never sent —
+  GPT-5-family models reject them; see spec 003.
 - **Log retention**: assumed unbounded growth acceptable for the demo.
 - **Ingestion auth**: `/ingest/logs` is open (no auth per project defaults).
   Assumed acceptable; a shared-secret header is the minimal hardening if
