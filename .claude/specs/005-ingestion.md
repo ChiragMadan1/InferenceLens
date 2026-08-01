@@ -231,12 +231,12 @@ from decimal import Decimal
 
 # Bump whenever any rate below changes. Stored costs are NOT backfilled —
 # a log's cost_usd reflects the map version in effect when it was ingested.
-PRICE_MAP_VERSION = "2026-07-28"
+PRICE_MAP_VERSION = "2026-08-01"
 
 # model id -> (input USD per million tokens, output USD per million tokens)
 PRICE_MAP: dict[str, tuple[Decimal, Decimal]] = {
-    "claude-opus-5": (Decimal("5.00"), Decimal("25.00")),
-    "claude-haiku-4-5-20251001": (Decimal("1.00"), Decimal("5.00")),
+    "gpt-5.6-terra": (Decimal("2.00"), Decimal("12.00")),
+    "gpt-5.6-luna": (Decimal("0.20"), Decimal("1.20")),
 }
 
 _MILLION = Decimal("1000000")
@@ -259,10 +259,19 @@ def compute_cost(
     ) / _MILLION
 ```
 
-The two seeded models mirror spec 003's settings defaults: `ANTHROPIC_MODEL`
-(`claude-opus-5`) and `ANTHROPIC_TITLE_MODEL` (`claude-haiku-4-5-20251001`).
+The two seeded models mirror spec 003's settings defaults: `OPENAI_MODEL`
+(`gpt-5.6-terra`) and `OPENAI_TITLE_MODEL` (`gpt-5.6-luna`).
 The map is hand-maintained in git; automated price sync is out of scope
 (design doc open question).
+
+**Cached input is deliberately not priced separately.** OpenAI bills cached
+input tokens at a discount (terra $0.20, luna $0.02 per MTok) and reports the
+cached count in `provider_metadata["cached_tokens"]`, but `PRICE_MAP` keeps its
+2-tuple shape and prices every input token at the full rate. Consequence:
+`cost_usd` is a slight **over**-estimate on cache-hit calls. Accepted for v1 —
+adding a third rate means changing the tuple shape, `compute_cost`'s signature,
+and threading the cached count out of the JSON column. Revisit if prompt
+caching is ever deliberately exercised.
 
 ## API contracts
 
@@ -399,13 +408,13 @@ when the user invokes it** — do not write them while implementing this spec.
 
 **Pricing**
 
-- [ ] `compute_cost("claude-opus-5", 1_000_000, 1_000_000)` returns
-      `Decimal("30.000000")`-equal value (5 + 25).
-- [ ] `compute_cost("claude-haiku-4-5-20251001", 500_000, 100_000)` returns the
-      exact `Decimal` for 0.5 + 0.5 = `Decimal("1.0")`.
+- [ ] `compute_cost("gpt-5.6-terra", 1_000_000, 1_000_000)` returns a
+      `Decimal("14")`-equal value (2 + 12).
+- [ ] `compute_cost("gpt-5.6-luna", 500_000, 100_000)` returns the exact
+      `Decimal` for 0.10 + 0.12 = `Decimal("0.22")`.
 - [ ] `compute_cost("some-unknown-model", 100, 100)` returns `None`.
-- [ ] `compute_cost("claude-opus-5", None, 50)` returns `None`.
-- [ ] `compute_cost("claude-opus-5", 0, 0)` returns `Decimal("0")`, not `None`.
+- [ ] `compute_cost("gpt-5.6-terra", None, 50)` returns `None`.
+- [ ] `compute_cost("gpt-5.6-terra", 0, 0)` returns `Decimal("0")`, not `None`.
 - [ ] `PRICE_MAP_VERSION` is a non-empty `str`.
 - [ ] Every `PRICE_MAP` value is a 2-tuple of `Decimal` (no floats).
 
@@ -565,10 +574,11 @@ because nothing writes to it yet.
 
 ## Open questions
 
-- **Price map values.** Assumed `claude-opus-5` at $5.00 / $25.00 per MTok and
-  `claude-haiku-4-5-20251001` at $1.00 / $5.00 per MTok (Anthropic list pricing
-  as of 2026-07-28). Confirm before build if the account is on non-list pricing;
-  the numbers are one-line edits in `pricing.py` either way.
+- **Price map values.** Assumed `gpt-5.6-terra` at $2.00 / $12.00 per MTok and
+  `gpt-5.6-luna` at $0.20 / $1.20 per MTok (OpenAI list pricing as of
+  2026-08-01). Confirm before build if the account is on non-list pricing or if
+  the rates have moved; the numbers are one-line edits in `pricing.py` either
+  way, and they must stay in sync with spec 003's settings defaults.
 - **`error_message` truncation limit.** Assumed 2000 characters, truncate rather
   than reject. Confirm before build if a longer or shorter cap is wanted — this
   is not specified anywhere upstream.
