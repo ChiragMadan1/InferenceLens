@@ -1,7 +1,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Conversation, ConversationStatus
+from app.models import DEFAULT_CONVERSATION_TITLE, Conversation, ConversationStatus
 
 
 class ConversationRepository:
@@ -10,7 +10,7 @@ class ConversationRepository:
 
     def create(self, title: str | None) -> Conversation:
         conversation = Conversation(
-            title=title or "New conversation",
+            title=title or DEFAULT_CONVERSATION_TITLE,
             status=ConversationStatus.ACTIVE,
         )
         self.db.add(conversation)

@@ -14,13 +14,16 @@ class ConversationStatus(StrEnum):
     ACTIVE = "active"
 
 
+DEFAULT_CONVERSATION_TITLE = "New conversation"
+
+
 class Conversation(Base):
     __tablename__ = "conversations"
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
     title: Mapped[str] = mapped_column(
-        String(200), nullable=False, server_default="New conversation"
+        String(200), nullable=False, server_default=DEFAULT_CONVERSATION_TITLE
     )
 
     status: Mapped[ConversationStatus] = mapped_column(

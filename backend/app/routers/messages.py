@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -9,6 +11,9 @@ from app.repositories.conversations import ConversationRepository
 from app.repositories.messages import MessageRepository
 from app.routers.conversations import get_conversation_repo
 from app.schemas import ChatTurnRead, MessageCreate, MessageRead, Page
+from app.titling import generate_title, should_title
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/conversations", tags=["messages"])
 
@@ -41,6 +46,7 @@ def list_messages(
 async def send_message(
     conversation_id: int,
     body: MessageCreate,
+    background_tasks: BackgroundTasks,
     conversation_repo: ConversationRepository = Depends(get_conversation_repo),
     message_repo: MessageRepository = Depends(get_message_repo),
     provider: ChatProvider = Depends(get_chat_provider),
@@ -73,6 +79,24 @@ async def send_message(
     assistant_message = message_repo.create_and_touch_conversation(
         conversation, MessageRole.ASSISTANT, result.content
     )
+
+    try:
+        assistant_count = message_repo.count_by_role(conversation_id, MessageRole.ASSISTANT)
+        if should_title(assistant_count, conversation):
+            background_tasks.add_task(
+                generate_title,
+                conversation_id=conversation.id,
+                user_text=user_message.content,
+                assistant_text=assistant_message.content,
+            )
+    except Exception:
+        # A titling bug must never turn a successful chat into a 500: the
+        # turn has already been stored and committed, so this is logged and
+        # skipped, not raised.
+        logger.exception(
+            "should_title check failed for conversation %s; skipping title scheduling.",
+            conversation_id,
+        )
 
     return ChatTurnRead(
         user_message=MessageRead.model_validate(user_message),

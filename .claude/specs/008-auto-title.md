@@ -1,6 +1,6 @@
 # 008 — Auto-generated conversation titles
 
-Depends on: 006 (logging SDK / `logged_chat()`), and therefore transitively on
+Depends on: 006 (logging SDK / the instrumented provider), and therefore transitively on
 003 (provider adapter) and 004 (chat endpoint).
 
 ## Problem statement
@@ -12,8 +12,8 @@ context to name the conversation itself.
 
 This also serves a second, deliberate purpose for the assignment: the titling
 call is a *second kind of inference call*, made with a different (cheap) model
-and much smaller `max_tokens`. Routing it through the same `logged_chat()`
-path means `GET /logs` shows chat and title calls side by side, and the
+and much smaller `max_tokens`. Routing it through the same instrumented
+provider path means `GET /logs` shows chat and title calls side by side, and the
 per-call cost/latency/token differences between models become visible in real
 data. Titling is the feature that proves the logging layer is
 call-site-agnostic.
@@ -33,23 +33,28 @@ degrades to "the title stays `New conversation`".
    `role = "assistant"`, and (b) `conversation.title` is still exactly the
    default `"New conversation"`. If either is false, nothing is scheduled and
    the turn returns normally.
-3. **FR3** — The titling call goes through `logged_chat()` with
-   `call_type="title"` and `conversation_id` set, producing exactly one
+3. **FR3** — The titling call obtains its provider from `get_title_provider()`
+   (spec 006 FR20), which returns a `LoggingChatProvider` bound to
+   `call_type="title"`. With `conversation_id` passed, it produces exactly one
    `inference_logs` row that is visible in `GET /logs` alongside the chat
    call for the same conversation. There is no second emission point.
-4. **FR4** — The call uses `settings.ANTHROPIC_TITLE_MODEL` (default
-   `claude-haiku-4-5-20251001`, defined in 003), `max_tokens = 32`, and
+4. **FR4** — The call uses `settings.OPENAI_TITLE_MODEL` (default
+   `gpt-5.6-luna`, defined in 003), `max_tokens = 32`, and
    `temperature = 0.0`, all as module constants in the titling module — not
    new settings. These values are captured into the log's `request_params`
    and `config_hash` by 006, which is exactly what makes the cheap-vs-chat
-   model comparison visible.
+   model comparison visible. As in the chat path, `temperature` is **passed to
+   `send_message()` and recorded, but never forwarded to the API** —
+   `OpenAIProvider._build_request()` drops it because GPT-5-family models reject
+   the parameter outright (spec 003, "Constraints").
 5. **FR5** — The titling prompt has the fixed shape defined in
    "API contracts → internal task contract" below: a dedicated system prompt
    plus one user message containing the first user text and the first
    assistant text, each truncated to 500 characters.
 6. **FR6** — The model output is sanitized by the exact algorithm in
    "Feature-specific rules" (strip → collapse whitespace → strip surrounding
-   quotes → hard-truncate to 30 characters) before it is stored.
+   quotes → truncate to 40 characters, appending a single ellipsis character
+   when truncation occurs) before it is stored.
 7. **FR7** — The title is written with a single conditional UPDATE
    (`... SET title = :new WHERE id = :id AND title = 'New conversation'`), so
    a concurrent writer can never double-apply or clobber a non-default title.
@@ -57,7 +62,7 @@ degrades to "the title stays `New conversation`".
 8. **FR8** — On any failure (`ProviderError`, timeout, empty or
    whitespace-only output, output that sanitizes to an empty string, DB
    error), the conversation keeps the title `"New conversation"`, an
-   `error`-status log with `call_type="title"` is emitted by `logged_chat()`,
+   `error`-status log with `call_type="title"` is emitted by the SDK,
    the failure is logged at ERROR with `conversation_id` context, and the
    chat turn is completely unaffected. **This is a hard requirement: the
    titling task must never raise into the chat request.**
@@ -119,12 +124,12 @@ untouched. The only externally observable effect is that a subsequent
 DEFAULT_CONVERSATION_TITLE = "New conversation"   # imported from models
 TITLE_MAX_TOKENS = 32
 TITLE_TEMPERATURE = 0.0
-TITLE_MAX_LEN = 30
+TITLE_MAX_LEN = 40
 TITLE_CONTEXT_CHARS = 500
 
 TITLE_SYSTEM_PROMPT = (
     "You write short titles for chat conversations. "
-    "Reply with the title only — 3 to 6 words, at most 30 characters, "
+    "Reply with the title only — 3 to 6 words, at most 40 characters, "
     "no surrounding quotes, no trailing punctuation, no explanation."
 )
 
@@ -153,14 +158,26 @@ Contract rules the implementer must follow literally:
   Assistant: {assistant_text[:500]}
   ```
 
-- The provider call is made as
-  `logged_chat(provider, model=settings.ANTHROPIC_TITLE_MODEL,
-  system=TITLE_SYSTEM_PROMPT, messages=[{"role": "user", "content": rendered}],
-  max_tokens=TITLE_MAX_TOKENS, temperature=TITLE_TEMPERATURE,
-  call_type="title", conversation_id=conversation_id)` — adapt argument names
-  to the exact `logged_chat()` signature 006 shipped; **do not add a
-  parameter to `logged_chat()` that 006 did not define, and do not build a
-  second wrapper.**
+- The provider call is made as:
+
+  ```python
+  provider = get_title_provider()          # already instrumented, call_type="title"
+  result = await provider.send_message(
+      [{"role": "user", "content": rendered}],
+      system=TITLE_SYSTEM_PROMPT,
+      model=settings.OPENAI_TITLE_MODEL,
+      max_tokens=TITLE_MAX_TOKENS,
+      temperature=TITLE_TEMPERATURE,
+      conversation_id=conversation_id,
+  )
+  ```
+
+  Adapt argument names to the exact `ChatProvider.send_message()` signature 006
+  shipped. **Do not import `CallRecorder`, `InferenceLogEvent`, a publisher, or
+  anything else from `app.logging_sdk` in this module, do not add a parameter
+  the interface does not define, and do not build a second wrapper** — the
+  `call_type="title"` labelling is bound inside `get_title_provider()`, which is
+  the only place that decision is made.
 
 ### Scheduling contract (change to spec 004's endpoint)
 
@@ -168,7 +185,8 @@ Contract rules the implementer must follow literally:
 parameter and, after the commit that stores the assistant message:
 
 ```python
-if should_title(db, conversation):          # FR2, both checks
+assistant_count = message_repo.count_by_role(conversation_id, MessageRole.ASSISTANT)
+if should_title(assistant_count, conversation):          # FR2, both checks
     background_tasks.add_task(
         generate_title,
         conversation_id=conversation.id,
@@ -176,6 +194,12 @@ if should_title(db, conversation):          # FR2, both checks
         assistant_text=assistant_message.content,
     )
 ```
+
+`should_title` is a pure function (`assistant_count: int, conversation: Conversation) ->
+bool`) — it takes an already-fetched count rather than a `Session`, per CLAUDE.md's data
+access layer convention (routers/domain modules don't touch `db` directly; only
+repositories do). `MessageRepository` gains a `count_by_role(conversation_id, role)`
+query method for this.
 
 No other change to 004's flow, response, or status codes.
 
@@ -213,9 +237,10 @@ No other change to 004's flow, response, or status codes.
   DB. Without this, the background task silently writes to the developer's
   real `app.db` during tests.
 - Single-store rule: SQLite only. No queue, no Redis, no cache.
-- `logged_chat()` from 006 is the only path to the provider. No direct
-  `AsyncAnthropic` use in this module.
-- No new settings. `ANTHROPIC_TITLE_MODEL` already exists from 003; the
+- `get_title_provider()` from 006 is the only way this module obtains a
+  provider. No direct `AsyncOpenAI` use, no `OpenAIProvider` import (it is not
+  exported), and no `app.logging_sdk` import.
+- No new settings. `OPENAI_TITLE_MODEL` already exists from 003; the
   token/temperature/length numbers are module constants.
 - No new dependency.
 - `make lint` clean before the change is done.
@@ -226,7 +251,7 @@ Design-doc edge cases by number, plus the ones specific to this feature.
 
 | # | Case | Exact behaviour |
 |---|------|-----------------|
-| **12** | Titling call fails or is slow (provider error, 5xx, rate limit, `PROVIDER_TIMEOUT_SECONDS` exceeded) | `logged_chat()` emits a `status="error"`, `call_type="title"` log with `error_type`/`error_message` and null tokens; `generate_title` catches `ProviderError`, logs at ERROR with `conversation_id`, returns. Title stays `"New conversation"`. **The chat turn already returned 200 and is untouched.** |
+| **12** | Titling call fails or is slow (provider error, 5xx, rate limit, `PROVIDER_TIMEOUT_SECONDS` exceeded) | The SDK emits a `status="error"`, `call_type="title"` log with `error_type`/`error_message` and null tokens; `generate_title` catches `ProviderError`, logs at ERROR with `conversation_id`, returns. Title stays `"New conversation"`. **The chat turn already returned 200 and is untouched.** |
 | **13** | Auto-title completes and overwrites something | v1 has no rename endpoint, so the only value it can overwrite is the default — and the conditional UPDATE (FR7) guarantees that: if `title != "New conversation"` at write time, 0 rows update and the task logs "title already set, skipping". Auto-title simply wins on a fresh conversation. When a rename feature lands, this UPDATE already protects a user-chosen title with no change. |
 | **3** | Second message sent while one is in flight | Rejected with 409 by spec 009 before any message is stored, so a conversation cannot produce two concurrent "first assistant messages". 008 relies on this only as belt-and-braces — FR7's conditional UPDATE is the actual guarantee, and it holds even with 009 absent. |
 | **4** | Cancel with nothing in flight | Not applicable to titling (409, spec 009). No titling interaction. |
@@ -234,7 +259,7 @@ Design-doc edge cases by number, plus the ones specific to this feature.
 | — | **First turn errored** (provider 502) | No assistant message was stored, so FR2's assistant-count check is 0 and **nothing is scheduled**. The next successful turn *is* the first assistant message, and titling fires then. This is correct and intentional. |
 | — | **First turn cancelled** (spec 009) | Same as above: no assistant message stored → no titling. The user's retry produces the first assistant message and titles then. |
 | — | Model returns empty / whitespace-only / all-punctuation output | Sanitization yields `""` → treated as a failure: title unchanged, ERROR log line. Note the inference log itself is `status="success"` (the provider call *did* succeed) — the sanitizer rejection is an app-level log line, not a fake error status. State this in the code comment; do not fabricate an error status for a successful call. |
-| — | Model returns a long paragraph | Whitespace-collapsed and hard-truncated to 30 chars. No ellipsis, no word-boundary logic. |
+| — | Model returns a long paragraph | Whitespace-collapsed and truncated to at most 40 chars, appending a single ellipsis character when truncated. No word-boundary logic. |
 | — | Model wraps the title in quotes or smart quotes | Stripped by the quote rule; nested/doubled quotes handled by the bounded 3-iteration loop. |
 | — | Conversation deleted between scheduling and the task running | v1 has no delete endpoint. If the row is missing, the conditional UPDATE affects 0 rows; log and return. No 404, no raise — there is no HTTP caller. |
 | — | Race: two writers both try to title | Impossible-by-409 in practice (edge 3); made safe regardless by the single-statement compare-and-set. Last writer only wins if the title is still the default; otherwise it no-ops. |
@@ -275,7 +300,7 @@ Checklist:
       `call_type="chat"` and one with `call_type="title"`, both
       `status="success"`, both carrying the conversation's id. Assert via
       `GET /logs?conversation_id={id}` (spec 007) or the recorder.
-- [ ] The `title` log's `model` equals `settings.ANTHROPIC_TITLE_MODEL` and
+- [ ] The `title` log's `model` equals `settings.OPENAI_TITLE_MODEL` and
       its `request_params` show `max_tokens == 32`, distinguishing it from the
       chat log's model and `max_tokens`.
 - [ ] POST a **second** message to the same conversation → no additional
@@ -293,7 +318,8 @@ Checklist:
 - [ ] Sanitizer unit checks (pure function, no client needed):
       `'"Trip to Japan"'` → `Trip to Japan`;
       `"  Trip\n  to  Japan  "` → `Trip to Japan`;
-      a 60-character string → exactly 30 characters with no trailing space;
+      a 60-character string → at most 40 characters, ending in a single
+      ellipsis character with no trailing space before it;
       `""`, `"   "`, `"\n"` → `None` (rejection sentinel).
 - [ ] Title is not applied when the conversation's title is no longer the
       default at write time: set the title mid-test (or pre-set it) and assert
@@ -303,8 +329,9 @@ Checklist:
 
 | File | Purpose |
 |---|---|
-| `backend/app/titling.py` | **New.** `DEFAULT_*`/`TITLE_*` constants, `TITLE_SYSTEM_PROMPT`, `render_title_prompt()`, `sanitize_title()`, `should_title()`, and the `generate_title()` background task (own session, never raises). |
-| `backend/app/routers/messages.py` | Add the `BackgroundTasks` parameter and the `should_title` → `add_task` block after the assistant-message commit. (Use whichever router file spec 004 put `POST /conversations/{id}/messages` in — do not create a second one.) |
+| `backend/app/titling.py` | **New.** `DEFAULT_*`/`TITLE_*` constants, `TITLE_SYSTEM_PROMPT`, `render_title_prompt()`, `sanitize_title()`, `should_title()` (pure function over an already-fetched count), and the `generate_title()` background task (own session, never raises). |
+| `backend/app/routers/messages.py` | Add the `BackgroundTasks` parameter and the count-fetch → `should_title` → `add_task` block after the assistant-message commit. (Use whichever router file spec 004 put `POST /conversations/{id}/messages` in — do not create a second one.) |
+| `backend/app/repositories/messages.py` | Add `count_by_role(conversation_id, role)` so the router never touches `db` directly (CLAUDE.md's data access layer convention). |
 | `backend/app/models.py` | Add/expose `DEFAULT_CONVERSATION_TITLE` constant and make the `Conversation.title` default reference it. **No column change, no migration.** |
 | `backend/tests/conftest.py` | Point `app.db.SessionLocal` at `TestingSessionLocal` so background tasks use the in-memory DB. *Created/edited only via the `generate-tests` skill, when the user invokes it.* |
 | `backend/tests/test_titling.py` | Coverage for the acceptance criteria above. *Created only via the `generate-tests` skill, when the user invokes it.* |
@@ -328,17 +355,24 @@ Explicitly **not** changed: `backend/app/schemas.py` (no new schema),
    `len(text) >= 2` and `text[0]` and `text[-1]` form a matching pair from
    `{" ", ' '}` plus the smart pairs `“ ”` and `‘ ’` (also accept the same
    straight quote on both ends), drop both characters and `.strip()` again.
-5. `if len(text) > 30: text = text[:30].rstrip()` — hard truncate, **no
-   ellipsis** (the result must be ≤ 30 characters).
+5. `if len(text) > 40: text = text[:39].rstrip() + "…"` — soft truncate to a
+   single character budget of 40: keep the first 39 characters, strip
+   trailing whitespace, then append one ellipsis character (`"…"`, U+2026).
+   The result is always ≤ 40 characters. No word-boundary logic.
 6. `if not text: return None`
 7. `return text`
 
 **Trigger detection — both checks, then a compare-and-set.**
 
-- *At schedule time* (`should_title(db, conversation)`, inside the request):
+- *At schedule time* (`should_title(assistant_count, conversation)`, inside the
+  request): the router fetches the count via
+  `MessageRepository.count_by_role(conversation_id, MessageRole.ASSISTANT)` —
   `SELECT COUNT(*) FROM messages WHERE conversation_id = :id AND role = 'assistant'`
-  must equal `1`, **and** `conversation.title == DEFAULT_CONVERSATION_TITLE`.
-  Both, not either. The count query is cheap and served by the
+  — which must equal `1`, **and** `conversation.title == DEFAULT_CONVERSATION_TITLE`.
+  Both, not either. `should_title` itself stays a pure function over the fetched
+  count and the conversation, not a `Session` — the query lives in the
+  repository per CLAUDE.md's data access layer convention. The count query is
+  cheap and served by the
   `(conversation_id, created_at)` index from 002.
 - *At write time* (inside the task, own session): do **not** re-read and
   branch in Python. Issue one statement:
@@ -374,22 +408,23 @@ requirement never to affect the chat turn — it logs with full context
 (`logger.exception`) and returns, which satisfies the never-swallow rule.
 This justification belongs in a comment in the code.
 
-**One emission point.** This feature adds no logging code. If you find
-yourself writing `InferenceLogEvent(...)` or calling the publisher in
-`titling.py`, stop — go through `logged_chat()`.
+**One emission point.** This feature adds no logging code at all. If you find
+yourself writing `InferenceLogEvent(...)`, importing `CallRecorder`, or calling
+a publisher in `titling.py`, stop — the provider returned by
+`get_title_provider()` already logs, and `CallRecorder` is the only thing
+allowed to build an event.
 
 ## Open questions
 
-- **Title length is a hard 30 characters, not "about 30".** Assumed a hard cap
-  with no ellipsis so `ConversationRead.title` never needs UI truncation;
-  confirm before build if a soft ~40 with ellipsis is preferred.
-- **`TITLE_TEMPERATURE = 0.0`** is assumed (titles should be low-variance and
-  it makes the title call's `request_params` visibly different from the chat
-  call's `temperature = 1.0` in the logs). Confirm before build if titling
-  should instead reuse `settings.TEMPERATURE`.
-- **Sanitizer rejection does not force an `error`-status log.** Assumed the
-  log reflects provider truth (`success`, because the call succeeded) and the
-  rejection is an app-level ERROR line only. Confirm before build if you'd
-  rather see `status="error"` for empty titles — that would make "titling
-  failed" one query in `GET /logs`, at the cost of a log status that
-  misrepresents the provider call.
+Resolved during implementation (2026-08-01):
+
+- **Title length: soft ~40 with ellipsis** — chosen over a hard 30 with no
+  ellipsis. `TITLE_MAX_LEN = 40`; `sanitize_title` appends a single `"…"`
+  character when truncating, so `ConversationRead.title` is always ≤ 40
+  characters. See "Feature-specific rules" for the exact algorithm.
+- **`TITLE_TEMPERATURE = 0.0`** — confirmed as specified (titles are
+  low-variance and this keeps the title call's `request_params` visibly
+  different from the chat call's `temperature` in the logs).
+- **Sanitizer rejection does not force an `error`-status log** — confirmed as
+  specified. The log reflects provider truth (`success`, since the call
+  succeeded); the rejection is an app-level ERROR line only.

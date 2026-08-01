@@ -27,6 +27,13 @@ class MessageRepository:
         ).all()
         return list(messages), total
 
+    def count_by_role(self, conversation_id: int, role: MessageRole) -> int:
+        return self.db.scalar(
+            select(func.count())
+            .select_from(Message)
+            .where(Message.conversation_id == conversation_id, Message.role == role)
+        )
+
     def get_window(self, conversation_id: int, limit: int = 10) -> list[Message]:
         rows = self.db.scalars(
             select(Message)
