@@ -61,7 +61,8 @@ this file is guidance; these are hard constraints.
         db.py               # SQLAlchemy engine, SessionLocal, Base, get_db dependency
         models.py           # SQLAlchemy ORM table definitions
         schemas.py           # Pydantic request/response models
-        routers/             # one file per resource
+        routers/             # one file per resource — HTTP concerns only
+        repositories/         # one file per resource — SQLAlchemy queries, see "Data access layer"
       alembic/                # migration scripts — see "Database migrations"
       tests/
         conftest.py           # isolated in-memory DB + `client` fixture
@@ -75,6 +76,50 @@ this file is guidance; these are hard constraints.
       .env.example
     CLAUDE.md                 # this file
     Makefile
+
+## Data access layer
+
+Every resource's SQLAlchemy queries live behind a repository class in
+`backend/app/repositories/<resource>.py` — routers never call
+`db.query`/`select`/`db.add`/`db.commit` directly. Convention,
+established by the `conversations` feature (spec 001):
+
+- One class per resource, e.g. `ConversationRepository`, constructed
+  with the request-scoped session:
+
+      class ConversationRepository:
+          def __init__(self, db: Session):
+              self.db = db
+
+- The class owns every query for that resource (`create`, `list`,
+  `get`, etc.) and returns ORM model instances — or plain tuples for
+  paginated lists (`(items, total)`) — never a `Page[T]` or other
+  response schema. Shaping the response into a schema stays in the
+  router.
+- Wire it into the router with its own dependency, declared in the
+  router file next to the resource's other router code:
+
+      def get_<resource>_repo(db: Session = Depends(get_db)) -> <Resource>Repository:
+          return <Resource>Repository(db)
+
+  Handlers take `repo: <Resource>Repository = Depends(get_<resource>_repo)`,
+  not `db: Session` directly. `db` should only appear in the
+  repository's constructor and in `get_<resource>_repo` — nowhere else
+  in the router.
+- The repository is a thin query layer, not a service layer:
+  validation that belongs to the endpoint (parent-exists checks, 404
+  vs raising `HTTPException`, response shaping) stays in the router,
+  not the repository.
+- `pyproject.toml`'s `[tool.ruff.lint.flake8-bugbear]` already sets
+  `extend-immutable-calls` for `fastapi.Depends`/`fastapi.Query`, so
+  this pattern doesn't trip bugbear's B008 — no per-feature lint config
+  needed.
+
+This is the one deliberate exception to "no premature abstraction"
+below: apply it to every new resource from the start, not just once a
+second caller of the same queries appears. It keeps routers focused on
+HTTP concerns (request/response, status codes, error translation) and
+keeps query logic independently testable and reusable outside FastAPI.
 
 ## Design docs and feature specs
 
@@ -169,7 +214,9 @@ drifts from what the app itself connects to.
   is only used once, don't build a framework for it. This is why routers
   are flat (`app/routers/<resource>.py`) rather than versioned
   (`api/v1/...`) — add versioning only when there's an actual second
-  version to support.
+  version to support. The one standing exception is the data access
+  layer (see "Data access layer") — every resource gets a repository
+  from the start, not just once a second caller shows up.
 - Tests are generated and run **only** through the `generate-tests`
   skill, and only when the user invokes it — don't write pytest cases
   or run `make test`/`pytest` as part of implementing a feature. When

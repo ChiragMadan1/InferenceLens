@@ -1,21 +1,48 @@
-"""
-SQLAlchemy ORM table definitions go here.
+from datetime import UTC, datetime
+from enum import StrEnum
 
-Left intentionally empty — define models here once requirements for
-the specific project are clear. Schema changes are tracked with Alembic
-(see alembic/ and the "Database migrations" section in README.md):
-after adding or changing a model, run `make db-revision message="..."`
-then `make db-upgrade`.
+from sqlalchemy import DateTime, String, func
+from sqlalchemy import Enum as SAEnum
+from sqlalchemy.orm import Mapped, mapped_column
 
-Example shape for reference (delete once real models are added):
+from app.db import Base
 
-    from sqlalchemy.orm import Mapped, mapped_column
-    from app.db import Base
 
-    class Item(Base):
-        __tablename__ = "items"
+class ConversationStatus(StrEnum):
+    ACTIVE = "active"
 
-        id: Mapped[int] = mapped_column(primary_key=True)
-        name: Mapped[str]
-        created_by: Mapped[int]
-"""
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    title: Mapped[str] = mapped_column(
+        String(200), nullable=False, server_default="New conversation"
+    )
+
+    status: Mapped[ConversationStatus] = mapped_column(
+        SAEnum(
+            ConversationStatus,
+            native_enum=False,
+            length=16,
+            values_callable=lambda e: [m.value for m in e],
+        ),
+        nullable=False,
+        default=ConversationStatus.ACTIVE,
+        server_default=ConversationStatus.ACTIVE.value,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+    )

@@ -6,9 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import setup_logging
+from app.routers import conversations
 from app.schemas import HealthResponse
-
-# from app.routers import example  # uncomment as you build each feature
 
 
 @asynccontextmanager
@@ -35,4 +34,4 @@ def health() -> HealthResponse:
     return HealthResponse(status="ok")
 
 
-# app.include_router(example.router)  # add per-feature, one at a time
+app.include_router(conversations.router)
