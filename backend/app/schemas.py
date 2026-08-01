@@ -11,7 +11,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models import ConversationStatus
+from app.models import ConversationStatus, MessageRole
 
 
 class HealthResponse(BaseModel):
@@ -49,3 +49,13 @@ class ConversationRead(BaseModel):
     status: ConversationStatus
     created_at: datetime
     updated_at: datetime
+
+
+class MessageRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    conversation_id: int
+    role: MessageRole
+    content: str
+    created_at: datetime

@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import setup_logging
-from app.routers import conversations
+from app.routers import conversations, messages
 from app.schemas import HealthResponse
 
 
@@ -35,3 +35,4 @@ def health() -> HealthResponse:
 
 
 app.include_router(conversations.router)
+app.include_router(messages.router)
