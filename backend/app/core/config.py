@@ -1,9 +1,15 @@
+from enum import StrEnum
 from functools import lru_cache
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.providers.base import Provider
+
+
+class EventTransport(StrEnum):
+    HTTP = "http"
+    KAFKA = "kafka"
 
 
 class Settings(BaseSettings):
@@ -49,6 +55,19 @@ class Settings(BaseSettings):
     # httpx timeout for the ingest POST. Bounds how long a fire-and-forget
     # background publish task can hang on a wedged ingestion endpoint.
     INGEST_TIMEOUT_SECONDS: float = 5.0
+
+    # Transport the logging SDK publishes InferenceLogEvents over. "http"
+    # (default) POSTs to INGEST_URL, exactly as today. "kafka" produces to
+    # KAFKA_TOPIC instead; a consumer (in-app or `python -m
+    # app.ingestion.consumer`) writes the topic into inference_logs. See
+    # spec 017.
+    EVENT_TRANSPORT: EventTransport = EventTransport.HTTP
+
+    KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
+    KAFKA_TOPIC: str = "inference-logs"
+    KAFKA_CONSUMER_GROUP: str = "ingestion"
+    KAFKA_CONSUMER_MAX_RECORDS: int = 100
+    KAFKA_CONSUMER_BATCH_TIMEOUT_MS: int = 1000
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

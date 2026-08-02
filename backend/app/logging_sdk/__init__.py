@@ -6,6 +6,7 @@ from app.logging_sdk.events import (
     LogStatus,
     config_hash,
 )
+from app.logging_sdk.kafka_publisher import KafkaEventPublisher
 from app.logging_sdk.publisher import EventPublisher, HTTPEventPublisher, NullEventPublisher
 from app.logging_sdk.recorder import CallRecorder
 
@@ -21,6 +22,7 @@ __all__ = [
     "config_hash",
     "EventPublisher",
     "HTTPEventPublisher",
+    "KafkaEventPublisher",
     "NullEventPublisher",
     "CallRecorder",
 ]

@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import ColumnElement, case, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from app.models import InferenceLog
@@ -85,6 +86,26 @@ class InferenceLogRepository:
         self.db.commit()
         self.db.refresh(log)
         return log
+
+    def create_many_skip_duplicates(self, logs: list[InferenceLog]) -> tuple[int, int]:
+        """Batch insert with per-row duplicate handling: each row gets its
+        own SAVEPOINT so one `request_id` collision doesn't roll back the
+        whole batch, and redelivery (at-least-once) results in zero new
+        rows for already-stored events. One commit per batch. Returns
+        (inserted, skipped).
+        """
+        inserted = 0
+        skipped = 0
+        for log in logs:
+            try:
+                with self.db.begin_nested():
+                    self.db.add(log)
+            except IntegrityError:
+                skipped += 1
+            else:
+                inserted += 1
+        self.db.commit()
+        return inserted, skipped
 
     def _filters(
         self,

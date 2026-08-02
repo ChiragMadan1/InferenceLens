@@ -1,4 +1,4 @@
-.PHONY: backend frontend test lint install-backend install-frontend db-revision db-upgrade db-downgrade
+.PHONY: backend frontend consumer test lint install-backend install-frontend db-revision db-upgrade db-downgrade
 
 install-backend:
 	cd backend && uv sync
@@ -11,6 +11,13 @@ backend:
 
 frontend:
 	cd frontend && npm run dev
+
+# Standalone inference log consumer (EVENT_TRANSPORT=kafka only — see
+# README.md "Kafka event pipeline (local dev)"). The FastAPI app also runs
+# this consumer in-app when EVENT_TRANSPORT=kafka; this target is for
+# running it as its own process instead/as well.
+consumer:
+	cd backend && uv run python -m app.ingestion.consumer
 
 test:
 	cd backend && uv run pytest -v

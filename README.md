@@ -108,6 +108,118 @@ step, so a fresh clone has no tables until you add a model and migrate:
 
 See "Database migrations" in `CLAUDE.md` for the full workflow.
 
+## Kafka event pipeline (local dev, optional)
+
+Spec 017. Inference log events normally travel HTTP fire-and-forget
+(`EVENT_TRANSPORT=http`, the default) — nothing below is required for
+that path, and a fresh clone with no broker running behaves exactly as
+before this spec. This section is only for testing `EVENT_TRANSPORT=kafka`
+locally. No Docker; the broker is a local Homebrew install running in
+KRaft mode (no ZooKeeper).
+
+### Install and start the broker
+
+    brew install kafka
+
+Homebrew's `kafka` formula only depends on `openjdk` — it's KRaft-only,
+and it auto-formats local storage the first time you install it, so
+there's no separate `kafka-storage format` step to run yourself.
+
+Run it either as a background service:
+
+    brew services start kafka
+
+or in the foreground, in its own terminal (useful when you want to see
+broker logs directly, or `Ctrl-C` to stop it):
+
+    $(brew --prefix)/opt/kafka/bin/kafka-server-start $(brew --prefix)/etc/kafka/server.properties
+
+Either way it listens on `localhost:9092` — the `KAFKA_BOOTSTRAP_SERVERS`
+default in `backend/.env.example`. Stop the background service with
+`brew services stop kafka`.
+
+### Create the topic
+
+The broker auto-creates topics on first publish, so this is optional —
+but creating it explicitly lets you set partition count up front and
+confirm the broker is reachable:
+
+    $(brew --prefix)/opt/kafka/bin/kafka-topics --create \
+      --topic inference-logs --bootstrap-server localhost:9092 \
+      --partitions 1 --replication-factor 1
+
+Confirm it exists:
+
+    $(brew --prefix)/opt/kafka/bin/kafka-topics --list --bootstrap-server localhost:9092
+
+### Subscribe to it (watch raw events land)
+
+In its own terminal, independent of this app's consumer — useful for
+confirming events are actually being produced before you go looking for
+them in the database:
+
+    $(brew --prefix)/opt/kafka/bin/kafka-console-consumer \
+      --bootstrap-server localhost:9092 \
+      --topic inference-logs --from-beginning
+
+Each line is one `InferenceLogEvent` as JSON, the same payload the HTTP
+transport POSTs to `/ingest/logs` today.
+
+### Testing flow
+
+1. Broker running (above), topic exists.
+2. In `backend/.env`, set `EVENT_TRANSPORT=kafka` (copy from
+   `.env.example` if you haven't already: `cp backend/.env.example
+   backend/.env`).
+3. `make backend` — the FastAPI lifespan starts the in-app consumer
+   automatically when `EVENT_TRANSPORT=kafka`; `/ingest/logs` stays
+   registered and usable regardless of transport.
+4. Send a chat message (via the frontend, or `POST /conversations` +
+   `POST /conversations/{id}/messages` through Swagger UI at
+   http://localhost:8000/docs).
+5. Watch it land: the `kafka-console-consumer` from above prints the
+   event JSON, and `GET /logs` (or the frontend's log dashboard) shows
+   the row the consumer wrote, cost populated identically to the HTTP
+   path.
+6. **Standalone consumer**: stop the backend, set `EVENT_TRANSPORT=http`
+   in `.env`, run `make backend` (now publishing over HTTP again) in one
+   terminal and `make consumer` in another — the standalone consumer
+   still works independent of the app's transport, per FR4.
+7. **Broker-down resilience**: stop Kafka (`brew services stop kafka` or
+   `Ctrl-C` the foreground broker) with `EVENT_TRANSPORT=kafka` still
+   set, then send another chat message — it still returns 200; the
+   backend log shows an ERROR line for the dropped publish; nothing
+   5xxes. Restart the broker and publishing resumes on the next call.
+8. **Redelivery / dedup check**: reset the consumer group to replay the
+   topic from the start (consumer must not be running when you do this):
+
+       $(brew --prefix)/opt/kafka/bin/kafka-consumer-groups \
+         --bootstrap-server localhost:9092 --group ingestion \
+         --topic inference-logs --reset-offsets --to-earliest --execute
+
+   Restart the consumer (`make backend` in kafka mode, or `make
+   consumer`) — every event redelivers, and `create_many_skip_duplicates`
+   skips them all as duplicates on `request_id`; `GET /logs` shows no new
+   rows.
+9. Set `EVENT_TRANSPORT` back to `http` (or delete the line) to return to
+   the zero-infra default.
+
+### Cleanup
+
+    brew services stop kafka          # if run as a background service
+    rm -rf $(brew --prefix)/var/lib/kraft-combined-logs   # wipe all topic data
+
+Deleting `kraft-combined-logs` removes every topic and offset. Unlike a
+fresh `brew install`, restarting the broker does **not** auto-reformat
+storage — you have to redo that step once:
+
+    uuid="$($(brew --prefix)/opt/kafka/bin/kafka-storage random-uuid)"
+    $(brew --prefix)/opt/kafka/bin/kafka-storage format --standalone \
+      -t "$uuid" -c $(brew --prefix)/etc/kafka/server.properties
+
+(or just `brew reinstall kafka`, which re-runs that same step
+automatically since the formatted-storage marker file is gone).
+
 ## Project structure
 
     backend/
