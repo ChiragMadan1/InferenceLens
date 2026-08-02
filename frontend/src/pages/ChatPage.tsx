@@ -353,7 +353,12 @@ function ChatPageContent({ conversationId }: { conversationId: number }) {
 
   const title = conversation?.title ?? `Conversation #${conversationId}`
   const untitled = conversation ? isDefaultTitle(conversation.title) : false
-  const isEmpty = !historyLoading && !historyError && messages.length === 0
+  const isEmpty =
+    !historyLoading &&
+    !historyError &&
+    messages.length === 0 &&
+    pendingUserText === null &&
+    streamingText === null
   const composerDisabled = historyError !== null && messages.length === 0
 
   return (
