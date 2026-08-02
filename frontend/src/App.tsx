@@ -2,10 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ConversationRail } from './components/shell/ConversationRail'
-import { SignalRibbon } from './components/shell/SignalRibbon'
-import { IconButton } from './components/ui/IconButton'
 import { useMediaQuery } from './hooks/useMediaQuery'
-import { useTheme, type ThemePreference } from './hooks/useTheme'
+import { useTheme } from './hooks/useTheme'
 
 const expandIcon = (
   <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden="true">
@@ -13,42 +11,31 @@ const expandIcon = (
   </svg>
 )
 
-const THEME_LABEL: Record<ThemePreference, string> = {
-  system: 'Theme: system. Click for light.',
-  light: 'Theme: light. Click for dark.',
-  dark: 'Theme: dark. Click for system.',
-}
-
-const moonIcon = (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-    <path
-      d="M13.5 9.5A6 6 0 1 1 6.5 2.5a5 5 0 0 0 7 7Z"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinejoin="round"
-    />
-  </svg>
-)
-
-const sunIcon = (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-    <circle cx="8" cy="8" r="3.2" stroke="currentColor" strokeWidth="1.3" />
-    <path
-      d="M8 1.5v1.4M8 13.1v1.4M14.5 8h-1.4M2.9 8H1.5M12.4 3.6l-1 1M4.6 11.4l-1 1M12.4 12.4l-1-1M4.6 4.6l-1-1"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-    />
-  </svg>
-)
-
 const RAIL_COLLAPSED_KEY = 'inferencelens:rail-collapsed'
+const RAIL_WIDTH_KEY = 'inferencelens:rail-width'
+const RAIL_WIDTH_DEFAULT = 288
+const RAIL_WIDTH_MIN = 200
+const RAIL_WIDTH_MAX = 480
 
 function readStoredCollapsed(): boolean {
   try {
     return localStorage.getItem(RAIL_COLLAPSED_KEY) === '1'
   } catch {
     return false
+  }
+}
+
+function clampRailWidth(width: number): number {
+  return Math.min(RAIL_WIDTH_MAX, Math.max(RAIL_WIDTH_MIN, width))
+}
+
+function readStoredWidth(): number {
+  try {
+    const raw = localStorage.getItem(RAIL_WIDTH_KEY)
+    const parsed = raw === null ? NaN : Number(raw)
+    return Number.isFinite(parsed) ? clampRailWidth(parsed) : RAIL_WIDTH_DEFAULT
+  } catch {
+    return RAIL_WIDTH_DEFAULT
   }
 }
 
@@ -62,9 +49,12 @@ export function AppShell() {
 
   const [railCollapsed, setRailCollapsed] = useState(readStoredCollapsed)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [railWidth, setRailWidth] = useState(readStoredWidth)
+  const [isResizingRail, setIsResizingRail] = useState(false)
 
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const drawerRef = useRef<HTMLDivElement>(null)
+  const resizeStartRef = useRef<{ x: number; width: number } | null>(null)
 
   useEffect(() => {
     try {
@@ -73,6 +63,45 @@ export function AppShell() {
       // localStorage unavailable — collapse state just won't persist
     }
   }, [railCollapsed])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RAIL_WIDTH_KEY, String(railWidth))
+    } catch {
+      // localStorage unavailable — width just won't persist
+    }
+  }, [railWidth])
+
+  const handleRailResizeStart = (event: React.MouseEvent) => {
+    event.preventDefault()
+    resizeStartRef.current = { x: event.clientX, width: railWidth }
+    setIsResizingRail(true)
+  }
+
+  useEffect(() => {
+    if (!isResizingRail) return
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    const onMouseMove = (event: MouseEvent) => {
+      const start = resizeStartRef.current
+      if (!start) return
+      setRailWidth(clampRailWidth(start.width + (event.clientX - start.x)))
+    }
+    const onMouseUp = () => {
+      resizeStartRef.current = null
+      setIsResizingRail(false)
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [isResizingRail])
 
   // Successful navigation closes the drawer and returns focus to the
   // menu button when it was open (FR26, edge case #14).
@@ -139,19 +168,6 @@ export function AppShell() {
 
   return (
     <div className="flex h-screen bg-canvas">
-      {/* /logs hides the sidebar entirely (unaffected by this redesign), which
-          also hides the theme toggle and SignalRibbon now that they live
-          there — this small floating cluster keeps both reachable without
-          reintroducing a full top bar. */}
-      {hideRail && (
-        <div className="fixed right-3 top-3 z-20 flex items-center gap-2 rounded-full border border-hairline bg-surface px-2 py-1 shadow-raised">
-          <SignalRibbon />
-          <IconButton aria-label={THEME_LABEL[preference]} onClick={cycle}>
-            {resolved === 'dark' ? moonIcon : sunIcon}
-          </IconButton>
-        </div>
-      )}
-
       {showFloatingToggle && (
         <button
           ref={menuButtonRef}
@@ -165,12 +181,25 @@ export function AppShell() {
       )}
 
       {showRailColumn && (
-        <aside className="w-[288px] shrink-0 border-r border-hairline bg-surface">
+        <aside
+          className="relative shrink-0 border-r border-hairline bg-surface"
+          style={{ width: railWidth }}
+        >
           <ConversationRail
             onToggleRail={handleToggleRail}
             themePreference={preference}
             themeResolved={resolved}
             onCycleTheme={cycle}
+          />
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            onMouseDown={handleRailResizeStart}
+            className={[
+              'absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize',
+              isResizingRail ? 'bg-signal' : 'bg-transparent hover:bg-signal/40',
+            ].join(' ')}
           />
         </aside>
       )}
@@ -213,7 +242,16 @@ export function AppShell() {
         )}
       </AnimatePresence>
 
-      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+      <main
+        className={[
+          'min-h-0 min-w-0 flex-1 overflow-y-auto',
+          // Reserves room for the floating expand-sidebar button (h-9 at
+          // top-3, i.e. 48px) so it never sits on top of page content.
+          showFloatingToggle ? 'pt-12' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
         <Outlet />
       </main>
     </div>

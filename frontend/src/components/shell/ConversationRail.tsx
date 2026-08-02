@@ -157,7 +157,7 @@ export function ConversationRail({
                   title={conversation.title}
                   className={({ isActive }) =>
                     [
-                      'relative flex items-center justify-between gap-2 rounded-lg py-2 pl-4 pr-2 text-sm',
+                      'relative flex flex-col gap-0.5 rounded-lg py-2 pl-4 pr-2 text-sm',
                       'transition-colors duration-[var(--dur-instant)] ease-out',
                       isActive
                         ? 'bg-signal-soft text-ink'
@@ -178,7 +178,7 @@ export function ConversationRail({
                         />
                       )}
                       <span className="truncate">{conversation.title}</span>
-                      <span className="font-data text-micro shrink-0 text-ink-muted">
+                      <span className="font-data text-micro text-ink-muted">
                         {formatDateTime(conversation.updated_at)}
                       </span>
                     </>
