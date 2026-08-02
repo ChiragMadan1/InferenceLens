@@ -4,6 +4,8 @@ backend/**/__pycache__/
 backend/.pytest_cache/
 backend/.ruff_cache/
 backend/app.db
+backend/app.db-wal
+backend/app.db-shm
 backend/.env
 frontend/node_modules/
 frontend/dist/
