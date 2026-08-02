@@ -86,6 +86,151 @@ export async function checkHealth(): Promise<{ status: string }> {
   return request<{ status: string }>('/health')
 }
 
+// ---------------------------------------------------------------------------
+// Inference logs (spec 007/014 backend, spec 015 frontend)
+// ---------------------------------------------------------------------------
+
+export type LogStatus = 'success' | 'error' | 'cancelled'
+export type CallType = 'chat' | 'title'
+export type BucketSize = 'minute' | 'hour' | 'day'
+export type LogGroupBy = 'none' | 'status' | 'model' | 'provider' | 'call_type'
+
+export type InferenceLogSummary = {
+  id: number
+  request_id: string
+  conversation_id: number | null
+  call_type: CallType
+  model: string
+  provider: string
+  status: LogStatus
+  latency_ms: number
+  input_tokens: number | null
+  output_tokens: number | null
+  time_to_first_token_ms: number | null
+  cost_usd: string | null // Decimal serialises as a string — never parse to float for display
+  error_type: string | null
+  config_hash: string | null
+  requested_at: string
+  completed_at: string | null
+  created_at: string
+  input_preview: string | null
+  output_preview: string | null
+}
+
+export type InferenceLogRead = InferenceLogSummary & {
+  schema_version: number
+  input_messages: Array<{ role: string; content: unknown }>
+  output_text: string | null
+  request_params: Record<string, unknown> | null
+  provider_metadata: Record<string, unknown> | null
+  error_message: string | null
+}
+
+export type TimeWindow = { from: string; to: string }
+export type LatencyStats = { p50_ms: number; p95_ms: number; p99_ms: number; avg_ms: number; max_ms: number }
+export type TokenStats = { input: number; output: number; total: number }
+
+export type LogGroupStat = {
+  key: string
+  is_other: boolean
+  calls: number
+  error_count: number
+  error_rate: number
+  latency_p95_ms: number | null
+  input_tokens: number
+  output_tokens: number
+  cost_usd: string | null
+}
+
+export type LogStatsRead = {
+  window: TimeWindow
+  total_calls: number
+  success_count: number
+  error_count: number
+  cancelled_count: number
+  error_rate: number
+  latency: LatencyStats | null
+  ttft: LatencyStats | null
+  tokens: TokenStats
+  cost_usd: string | null
+  cost_coverage: number
+  by_model: LogGroupStat[]
+  by_provider: LogGroupStat[]
+  by_call_type: LogGroupStat[]
+  by_status: LogGroupStat[]
+}
+
+export type TimeseriesPoint = {
+  t: string
+  calls: number
+  error_count: number
+  cancelled_count: number
+  latency_p50_ms: number | null
+  latency_p95_ms: number | null
+  input_tokens: number
+  output_tokens: number
+  cost_usd: string | null
+}
+
+export type TimeseriesSeries = { key: string; is_other: boolean; points: TimeseriesPoint[] }
+
+export type LogTimeseriesRead = {
+  window: TimeWindow
+  bucket: BucketSize
+  group_by: LogGroupBy
+  bucket_count: number
+  series: TimeseriesSeries[]
+}
+
+export type LogListQuery = {
+  limit: number
+  offset: number
+  conversation_id?: number
+  status?: LogStatus
+  call_type?: CallType
+  model?: string
+  provider?: string
+}
+
+export type LogStatsQuery = {
+  from?: string
+  to?: string
+  conversation_id?: number
+  status?: LogStatus
+  call_type?: CallType
+  model?: string
+  provider?: string
+}
+
+export type LogTimeseriesQuery = LogStatsQuery & {
+  bucket: BucketSize
+  group_by: LogGroupBy
+}
+
+// Omits any undefined filter rather than sending an empty value — spec 014
+// treats an unparseable or empty enum as a 422, not as "no filter".
+function toParams(q: Record<string, string | number | undefined>): string {
+  const p = new URLSearchParams()
+  for (const [k, v] of Object.entries(q)) if (v !== undefined) p.set(k, String(v))
+  return p.toString()
+}
+
+export async function listLogs(q: LogListQuery): Promise<Page<InferenceLogSummary>> {
+  return request<Page<InferenceLogSummary>>(`/logs?${toParams(q)}`)
+}
+
+export async function getLog(requestId: string): Promise<InferenceLogRead> {
+  return request<InferenceLogRead>(`/logs/${encodeURIComponent(requestId)}`)
+}
+
+export async function getLogStats(q: LogStatsQuery): Promise<LogStatsRead> {
+  return request<LogStatsRead>(`/logs/stats?${toParams(q)}`)
+}
+
+export async function getLogTimeseries(q: LogTimeseriesQuery): Promise<LogTimeseriesRead> {
+  return request<LogTimeseriesRead>(`/logs/timeseries?${toParams(q)}`)
+}
+
 export async function createConversation(title?: string): Promise<ConversationRead> {
   const body: ConversationCreate = { title: title ?? null }
   const created = await request<ConversationRead>('/conversations', {

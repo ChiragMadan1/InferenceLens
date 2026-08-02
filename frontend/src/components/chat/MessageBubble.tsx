@@ -47,7 +47,7 @@ function CopyControl({ text, label }: { text: string; label: string }) {
   )
 }
 
-type Segment =
+export type Segment =
   | { type: 'text'; content: string }
   | { type: 'code'; content: string; language: string | null }
 
@@ -55,7 +55,10 @@ type Segment =
 // no other markdown construct is interpreted. An odd number of fences means
 // the trailing slot is unterminated; it's reclassified as text (with its
 // marker restored) rather than silently dropped.
-function splitFencedContent(content: string): Segment[] {
+//
+// Exported so spec 015's log detail page can apply the same treatment to
+// output_text (FR39) without a second parser.
+export function splitFencedContent(content: string): Segment[] {
   const parts = content.split('```')
   const unbalanced = parts.length % 2 === 0
   const lastIndex = parts.length - 1
@@ -86,7 +89,7 @@ function splitFencedContent(content: string): Segment[] {
   return segments
 }
 
-function CodeSegment({ language, content }: { language: string | null; content: string }) {
+export function CodeSegment({ language, content }: { language: string | null; content: string }) {
   return (
     <div className="my-2 overflow-hidden rounded-md bg-surface-sunken">
       <div className="flex items-center justify-between gap-2 px-3 py-1.5">
@@ -100,7 +103,7 @@ function CodeSegment({ language, content }: { language: string | null; content: 
   )
 }
 
-function TextSegment({ content }: { content: string }) {
+export function TextSegment({ content }: { content: string }) {
   return <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{content}</div>
 }
 

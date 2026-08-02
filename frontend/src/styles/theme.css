@@ -21,6 +21,20 @@
   --raw-status-cancelled: #94a3b8;
   --raw-status-error: #ef4a5e;
 
+  /* Chart-only tokens (spec 015) — categorical identity slots (model,
+     provider, input-vs-output) in fixed, never-cycled order, and the
+     latency-percentile ordinal ramp. Validated against this app's real
+     chart surfaces with the dataviz skill's validate_palette.js; slot
+     order is load-bearing for the CVD adjacency checks — do not reorder. */
+  --raw-chart-cat-1: #1c9ee0;
+  --raw-chart-cat-2: #db2777;
+  --raw-chart-cat-3: #6da80e;
+  --raw-chart-cat-4: #8b5cf6;
+  --raw-chart-cat-5: #12a594;
+  --raw-chart-ordinal-p50: #2e7fa8;
+  --raw-chart-ordinal-p95: #1c9ee0;
+  --raw-chart-ordinal-p99: #7dd3fc;
+
   --raw-shadow-panel: 0 0 0 1px var(--raw-hairline) inset, 0 2px 6px rgba(0, 0, 0, 0.35);
   --raw-shadow-raised: 0 0 0 1px var(--raw-hairline) inset, 0 8px 24px rgba(0, 0, 0, 0.5);
   --raw-shadow-focus: 0 0 0 1px var(--raw-hairline) inset, 0 0 0 2px rgba(56, 189, 248, 0.4);
@@ -41,6 +55,15 @@
   --raw-status-success: #047857;
   --raw-status-cancelled: #64748b;
   --raw-status-error: #dc2626;
+
+  --raw-chart-cat-1: #1183c0;
+  --raw-chart-cat-2: #c2185b;
+  --raw-chart-cat-3: #5a8c0c;
+  --raw-chart-cat-4: #7c3aed;
+  --raw-chart-cat-5: #00998a;
+  --raw-chart-ordinal-p50: #7fc4e8;
+  --raw-chart-ordinal-p95: #1183c0;
+  --raw-chart-ordinal-p99: #0b4f73;
 
   --raw-shadow-panel: 0 0 0 1px var(--raw-hairline) inset, 0 2px 6px rgba(15, 23, 42, 0.08);
   --raw-shadow-raised: 0 0 0 1px var(--raw-hairline) inset, 0 8px 24px rgba(15, 23, 42, 0.12);
@@ -64,6 +87,17 @@
   --color-status-success: var(--raw-status-success);
   --color-status-cancelled: var(--raw-status-cancelled);
   --color-status-error: var(--raw-status-error);
+
+  /* Chart tokens (spec 015) — consumed by src/lib/chartTheme.ts, the only
+     place chart colours exist. Never redefine an existing token above. */
+  --color-chart-cat-1: var(--raw-chart-cat-1);
+  --color-chart-cat-2: var(--raw-chart-cat-2);
+  --color-chart-cat-3: var(--raw-chart-cat-3);
+  --color-chart-cat-4: var(--raw-chart-cat-4);
+  --color-chart-cat-5: var(--raw-chart-cat-5);
+  --color-chart-ordinal-p50: var(--raw-chart-ordinal-p50);
+  --color-chart-ordinal-p95: var(--raw-chart-ordinal-p95);
+  --color-chart-ordinal-p99: var(--raw-chart-ordinal-p99);
 
   /* Typography — three faces, three jobs (see theme.css consumers). */
   --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
