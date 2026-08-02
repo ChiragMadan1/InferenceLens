@@ -1,15 +1,15 @@
 # InferenceLens
 
-**LLM inference observability, built as a system — not a logging statement.**
+A lightweight LLM chat app, and the inference logging and analytics
+pipeline behind it. The chat part is deliberately small — the pipeline is
+the point.
 
-InferenceLens is an inference logging and analytics pipeline paired with a
-lightweight chat application that serves as its reference workload. Every
-model call — chat, streaming, or background titling; success, error, or
-cancellation — produces exactly one structured inference log capturing the
-full rendered prompt, completion, token usage, latency, cost, and failure
-details. That guarantee is **structural, not conventional**: instrumentation
-is built into the only provider object the application can obtain, so there
-is no unlogged code path to forget about.
+Every model call — chat, streaming, or the background titling call;
+success, error, or cancellation — produces exactly one structured
+inference log with the full rendered prompt, the completion, token usage,
+latency, cost, and failure details. Nothing relies on call sites
+remembering to log: the only provider object the application can obtain
+is already instrumented, so an unlogged call path doesn't exist.
 
 ## Highlights
 
@@ -34,19 +34,19 @@ is no unlogged code path to forget about.
   full-prompt drill-down.
 - **Event-driven architecture** — every log travels as a versioned event
   through an `EventPublisher` interface, over HTTP or Kafka. The broker
-  buys durability (events survive ingestion downtime), replay,
-  backpressure absorption, and fan-out to future consumers — and was
+  adds durability (events survive ingestion downtime), replay,
+  backpressure absorption, and fan-out to future consumers — and it was
   swapped in without touching a single call site.
 - **PII redaction for production-grade logging** — emails, phone numbers,
   and other identifiers are scrubbed from log content *before* events
   leave the producing process, so sensitive data never crosses the wire
-  or reaches the broker — the boundary compliance reviews actually
-  require.
+  or reaches the broker. That's the boundary a compliance review will
+  ask about.
 - **Per-call cost tracking** — `cost_usd` computed at ingestion from a
   versioned price map, stored so historical costs stay immutable when
   prices change.
 
-Under the hood, three properties define the design:
+Under the hood:
 
 - **SDK-style automatic instrumentation** — a portable logging SDK
   (`app/logging_sdk/`) that wraps any provider through a small contract and
@@ -151,8 +151,8 @@ $(brew --prefix)/opt/kafka/bin/kafka-topics --create \
 Then set `EVENT_TRANSPORT=kafka` in `backend/.env` and restart
 `make backend`. The FastAPI lifespan starts the in-app consumer
 automatically; events now flow SDK → broker → consumer → database. The
-same consumer also runs standalone (`make consumer`) — the shape the
-future service split takes.
+same consumer also runs standalone (`make consumer`), which is how it
+would run if ingestion were ever split into its own service.
 
 Useful checks:
 
@@ -161,16 +161,16 @@ Useful checks:
 $(brew --prefix)/opt/kafka/bin/kafka-console-consumer \
   --bootstrap-server localhost:9092 --topic inference-logs --from-beginning
 
-# replay the topic from the start — every event redelivers and is
-# skipped as a duplicate on request_id (idempotency in action)
+# replay the topic from the start — every event redelivers and gets
+# skipped as a duplicate on request_id
 $(brew --prefix)/opt/kafka/bin/kafka-consumer-groups \
   --bootstrap-server localhost:9092 --group ingestion \
   --topic inference-logs --reset-offsets --to-earliest --execute
 ```
 
 Kill the broker mid-session and chat keeps working — publish failures log
-at ERROR and the request is unaffected. That containment is a core
-contract, not an accident (see [Failure handling](#failure-handling)).
+at ERROR and the request is unaffected. That containment is deliberate;
+see [Failure handling](#failure-handling).
 
 ### DuckDB analytics engine
 
@@ -237,8 +237,7 @@ Makefile                  # every workflow is a make target
 
 ### Design principles
 
-Four decisions shape everything else; each was made deliberately and each
-buys a specific property:
+Four decisions shape most of what follows:
 
 1. **Instrumentation is structural, not conventional.** The industry has
    four ways to capture LLM calls: explicit wrapper functions (opt-in, so
@@ -258,7 +257,7 @@ buys a specific property:
    arrives through an ABC the host implements. The package could be
    lifted into another codebase, or published, unchanged. The check is
    mechanical (`grep "from app\." backend/app/logging_sdk/` must be
-   empty), which makes the boundary enforceable in review, not aspirational.
+   empty), so the boundary is easy to hold in code review.
 
 3. **Adapters absorb provider variance.** Every vendor shapes responses
    differently (OpenAI's `usage.input_tokens` vs. Anthropic's
@@ -289,8 +288,8 @@ result = await provider.send_message(messages, system=..., model=..., ...)
 ```
 
 Behind that call, `CallRecorder.invoke()` is the single emission point in
-the entire codebase — there is exactly one place events are built, so
-"exactly one log per call" is a property of the code's shape:
+the entire codebase. Events are built in exactly one place, so "exactly
+one log per call" holds without any call site having to think about it:
 
 ```
 CallRecorder.invoke(adapter, call_type, **kwargs)
@@ -305,7 +304,7 @@ CallRecorder.invoke(adapter, call_type, **kwargs)
     return result                                    # untouched
 ```
 
-Three properties worth noting:
+A few things to note:
 
 - **The event is assembled on every exit path** — success, provider
   error, and cancellation all produce a log with the right status.
@@ -316,11 +315,10 @@ Three properties worth noting:
   the codebase; everywhere else, swallowing exceptions is banned.
 - **The processor chain runs producer-side.** PII redaction
   (`scrubadub`-based, on by default) scrubs `input_messages` and
-  `output_text` *before* the event leaves the process — sensitive content
-  never crosses the wire or reaches the broker, which is the boundary
-  compliance reviews actually care about. Each field scrubs under its own
-  guard and fails open to the original text, logged, rather than taking
-  the pipeline down.
+  `output_text` *before* the event leaves the process, so sensitive
+  content never crosses the wire or reaches the broker. Each field
+  scrubs under its own guard and fails open to the original text,
+  logged, rather than taking the pipeline down.
 
 ### End-to-end ingestion flow
 
@@ -353,7 +351,7 @@ sequenceDiagram
     Ing->>Ing: validate versioned schema (tolerant reader)
     Ing->>Ing: compute cost_usd from price map
     Ing->>DB: insert — idempotent on request_id
-    Note over Ing,DB: kafka: offsets commit only after DB commit;<br/>redelivery dedups on request_id →<br/>effectively exactly-once in the DB
+    Note over Ing,DB: kafka mode — offsets commit only after the DB commit<br/>redelivery dedups on request_id →<br/>effectively exactly-once in the DB
 ```
 
 Both transports converge on the same code: `build_log()` in
@@ -381,8 +379,8 @@ own rules, confined to this boundary:
 
 ### Extensibility surfaces
 
-Every anticipated axis of change has a designed seam. The test of each
-seam is the blast radius of a change:
+Each change this design anticipates has its own seam. The table lists
+what you'd touch, and what stays untouched:
 
 | To add… | You touch | Everything else |
 |---|---|---|
@@ -400,9 +398,9 @@ filter or aggregate on it (an additive migration).
 
 ### Failure handling
 
-The governing contract: **observability must never take down the thing it
-observes.** Containment is explicit at every boundary, and each failure
-mode has a defined behavior:
+One rule runs through all of this: **observability must never take down
+the thing it observes.** Containment is explicit at every boundary, and
+each failure mode has a defined behavior:
 
 | Failure | Behavior |
 |---|---|
@@ -421,9 +419,9 @@ mode has a defined behavior:
 
 ## Data model
 
-Three tables: `conversations`, `messages`, and the one that matters —
-`inference_logs`. Highlights of the log schema and the reasoning behind
-each choice:
+Three tables: `conversations`, `messages`, and `inference_logs`, where
+most of the design decisions live. The log schema's choices and the
+reasoning behind them:
 
 | Design choice | Why |
 |---|---|
@@ -445,11 +443,11 @@ conversation), `(status, created_at)` (error triage).
 
 | Component | Role | Why this one |
 |---|---|---|
-| **FastAPI + Pydantic v2** | API layer, validation, DI | Typed request/response schemas at every boundary (no raw dicts cross the API), native async for fire-and-forget publishing and SSE streaming, and `Depends` as the injection seam the instrumented provider rides in on |
+| **FastAPI + Pydantic v2** | API layer, validation, DI | Typed request/response schemas at every boundary (no raw dicts cross the API), native async for fire-and-forget publishing and SSE streaming, and `Depends` is how the instrumented provider reaches request handlers |
 | **SQLAlchemy 2.0 + Alembic** | ORM + migrations | Migrations are the only schema-change path; `DATABASE_URL` is the single source of truth, so SQLite→Postgres is config, not code |
-| **SQLite (WAL mode)** | The single datastore | Right-sized: the same store serves transactional chat tables and append-only logs with zero ops. WAL + busy-timeout were enabled deliberately once concurrent writers (request handlers, titling tasks, the Kafka consumer) and an out-of-band reader (DuckDB) existed |
-| **Kafka (`aiokafka`)** | Durable event transport (opt-in) | Decouples producer from ingestion, absorbs bursts, enables replay and future fan-out (alerting, evals) from the same stream. `aiokafka` over `confluent-kafka` because it's asyncio-native and fits the FastAPI event loop; librdkafka's throughput edge is irrelevant at this volume. **Opt-in by design** — the default HTTP transport keeps the app zero-infra |
-| **DuckDB** | Columnar analytics engine | Answers "aggregate scans are outgrowing the row store" without a second datastore: it attaches the live SQLite file read-only and computes percentiles + timeseries in single-pass SQL (the old path ran one query per percentile and bucketed timeseries in Python). No server, no copy of the data, no new write path |
+| **SQLite (WAL mode)** | The single datastore | One store serves both the transactional chat tables and the append-only logs, with zero ops at this scale. WAL + busy-timeout went in once there were concurrent writers (request handlers, titling tasks, the Kafka consumer) and an out-of-band reader (DuckDB) |
+| **Kafka (`aiokafka`)** | Durable event transport (opt-in) | Decouples producer from ingestion, absorbs bursts, enables replay and future fan-out (alerting, evals) from the same stream. `aiokafka` over `confluent-kafka` because it's asyncio-native and fits the FastAPI event loop; librdkafka's throughput edge is irrelevant at this volume. Opt-in on purpose: the default HTTP transport keeps the app zero-infra |
+| **DuckDB** | Columnar analytics engine | Handles the aggregate queries that were starting to outgrow the row store, without adding a second datastore: it attaches the live SQLite file read-only and computes percentiles + timeseries in single-pass SQL (the old path ran one query per percentile and bucketed timeseries in Python). No server, no copy of the data, no new write path |
 | **scrubadub** | PII redaction processor | Producer-side scrubbing at the SDK boundary — content is clean before it crosses any wire; fails open per field so redaction can never lose an event |
 | **uv / npm / Make** | Toolchain | One entry point per workflow; no Docker, no manual venvs — a fresh clone is running in four commands |
 | **React + Vite + TS** | Chat UI + log dashboard | Deliberately thin; every endpoint gets a typed function in `src/api.ts` mirroring backend schema names so drift is visible |
@@ -485,9 +483,9 @@ list endpoints paginate (`limit`/`offset` with a `Page[T]` envelope).
 
 ## Tradeoffs and the scaling path
 
-Every simplification here is deliberate, recorded, and paired with the
-seam that upgrades it. The system is built for its current scale while
-keeping each growth step a swap, not a rewrite:
+The system is sized for the scale it actually runs at, but each
+simplification was made knowingly and comes with a worked-out upgrade
+path. The goal is for every growth step to be a swap, not a rewrite:
 
 ```mermaid
 flowchart LR
@@ -495,7 +493,7 @@ flowchart LR
     D["HTTP fire-and-forget"] --> E["+ Kafka transport<br/>(current: opt-in durability)"] --> F["Multiple consumer groups:<br/>alerting · evals · rollups"]
 ```
 
-| Concern | Current position | The upgrade, when earned |
+| Concern | Current position | Upgrade path |
 |---|---|---|
 | **Analytics store** | DuckDB over the live SQLite file | ClickHouse fed by the Kafka consumer once volume outgrows a single file — the Langfuse/Helicone architecture. The `EventPublisher`/consumer split already draws that boundary |
 | **Event durability** | HTTP default (loss accepted, logged); Kafka opt-in (durable, replayable) | Kafka as default + a dead-letter topic for malformed messages; SDK-side bounded queue with batch flush and drop-on-overflow — the pattern production SDKs use |
@@ -509,8 +507,9 @@ flowchart LR
 | **Ingestion hardening** | Open endpoint (internal-only) | Shared-secret header or mTLS between services at the service split; rate limiting at the edge |
 | **Provider resilience** | Vendor SDK retries + timeout | Circuit breaker, fallback models, per-user quotas — premature before multi-tenancy |
 
-The through-line: **interfaces were placed where change is confirmed, not
-speculative.** The `EventPublisher` abstraction existed one transport
-before Kafka arrived and absorbed it without touching a call site; the
-adapter contract existed one provider before Anthropic landed as a
-one-file addition. That's the standard each remaining seam is held to.
+Interfaces here were added once a direction was confirmed, not on
+speculation — and two of them have already been through the exercise.
+The `EventPublisher` abstraction existed one transport before Kafka
+arrived and absorbed it without touching a call site, and the adapter
+contract existed one provider before Anthropic landed as a one-file
+addition. The rest of the table follows the same logic.
