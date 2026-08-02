@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     # configuration error (500 + ERROR log), never a silent fallback.
     ANALYTICS_ENGINE: AnalyticsEngine = AnalyticsEngine.AUTO
 
+    # Whether the app-layer PII redactor (app/core/redaction.py) is
+    # registered into the SDK's EVENT_PROCESSORS chain at startup (spec
+    # 021). Redacts input_messages[*].content and output_text before
+    # publish; the messages table and API/SSE responses stay raw.
+    REDACTION_ENABLED: bool = True
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def _split_csv(cls, value: str | list[str]) -> str | list[str]:

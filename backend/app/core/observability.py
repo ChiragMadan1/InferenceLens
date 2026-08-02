@@ -1,7 +1,9 @@
 import logging
 
 from app.core.config import EventTransport, settings
+from app.core.redaction import redact_event
 from app.logging_sdk import CallRecorder, HTTPEventPublisher, KafkaEventPublisher
+from app.logging_sdk.events import EVENT_PROCESSORS
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,9 @@ async def init_observability() -> None:
     _publisher = publisher
     _recorder = CallRecorder(_publisher)
 
+    if settings.REDACTION_ENABLED and redact_event not in EVENT_PROCESSORS:
+        EVENT_PROCESSORS.append(redact_event)
+
 
 async def close_observability() -> None:
     """Close the active publisher's transport on shutdown."""
@@ -38,6 +43,9 @@ async def close_observability() -> None:
         await _publisher.aclose()
     _publisher = None
     _recorder = None
+
+    if redact_event in EVENT_PROCESSORS:
+        EVENT_PROCESSORS.remove(redact_event)
 
 
 def get_recorder() -> CallRecorder:
