@@ -11,6 +11,8 @@ latency, cost, and failure details. Nothing relies on call sites
 remembering to log: the only provider object the application can obtain
 is already instrumented, so an unlogged call path doesn't exist.
 
+**[Demo video](https://drive.google.com/file/d/1bWVcU9BqR0sWscdy9Cd6jbuZlJ6iWLde/view?usp=sharing)**
+
 ## Highlights
 
 **The chat application**
