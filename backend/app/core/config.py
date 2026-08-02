@@ -42,8 +42,17 @@ class Settings(BaseSettings):
     # Required — no default. Missing at startup means the app does not boot.
     OPENAI_API_KEY: str
 
-    OPENAI_MODEL: str = "gpt-5.6-terra"
+    # Optional — absence just hides anthropic models from GET /models
+    # (app.providers.catalog.available_models()); the app still boots.
+    ANTHROPIC_API_KEY: str | None = None
+
     OPENAI_TITLE_MODEL: str = "gpt-5.6-luna"
+
+    # Model used for POST .../messages and .../messages/stream when the
+    # request omits `model`. Must be a key in app.providers.catalog.MODEL_CATALOG
+    # — validated below so a typo fails at startup, not at request time.
+    DEFAULT_CHAT_MODEL: str = "gpt-5.6-terra"
+
     SYSTEM_PROMPT: str = "You are a helpful, concise assistant."
     MAX_TOKENS: int = 1024
 
@@ -94,6 +103,23 @@ class Settings(BaseSettings):
     def _split_csv(cls, value: str | list[str]) -> str | list[str]:
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
+
+    @field_validator("DEFAULT_CHAT_MODEL")
+    @classmethod
+    def _require_catalog_model(cls, value: str) -> str:
+        # Fail fast at startup on a typo'd model id — a misconfiguration,
+        # not a request-time surprise (spec 020 edge case 9). Imported
+        # lazily: app.providers.catalog imports Provider from
+        # app.providers.base, which this module also imports — a
+        # module-level import here risks import-order fragility.
+        from app.providers.catalog import MODEL_CATALOG
+
+        if value not in MODEL_CATALOG:
+            raise ValueError(
+                f"DEFAULT_CHAT_MODEL={value!r} is not a known model id. "
+                f"Allowed ids: {sorted(MODEL_CATALOG)}"
+            )
         return value
 
 

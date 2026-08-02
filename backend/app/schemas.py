@@ -67,6 +67,10 @@ class MessageRead(BaseModel):
 
 class MessageCreate(BaseModel):
     content: str
+    # Omitted/null -> the configured default model (settings.DEFAULT_CHAT_MODEL).
+    # Validated against the catalog in the router (404-style 422), not here —
+    # this schema only enforces shape (spec 020 FR3/FR4).
+    model: str | None = None
 
     @field_validator("content")
     @classmethod
@@ -74,6 +78,18 @@ class MessageCreate(BaseModel):
         v = v.strip()
         if not v:
             raise ValueError("content must not be empty or whitespace-only")
+        return v
+
+    @field_validator("model")
+    @classmethod
+    def _strip_and_validate_model(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            raise ValueError("model must not be empty or whitespace-only")
+        if len(v) > 128:
+            raise ValueError("model must be at most 128 characters")
         return v
 
 
@@ -84,6 +100,13 @@ class ChatTurnRead(BaseModel):
 
 class StreamChunk(BaseModel):
     delta: str
+
+
+class ModelRead(BaseModel):
+    id: str
+    provider: str
+    display_name: str
+    is_default: bool
 
 
 class CallType(StrEnum):

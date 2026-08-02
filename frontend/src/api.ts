@@ -87,6 +87,21 @@ export async function checkHealth(): Promise<{ status: string }> {
 }
 
 // ---------------------------------------------------------------------------
+// Model catalog (spec 020)
+// ---------------------------------------------------------------------------
+
+export type ModelRead = {
+  id: string
+  provider: string
+  display_name: string
+  is_default: boolean
+}
+
+export async function getModels(): Promise<ModelRead[]> {
+  return request<ModelRead[]>('/models')
+}
+
+// ---------------------------------------------------------------------------
 // Inference logs (spec 007/014 backend, spec 015 frontend)
 // ---------------------------------------------------------------------------
 
@@ -266,6 +281,7 @@ export type MessageRead = {
 
 export type MessageCreate = {
   content: string
+  model?: string
 }
 
 export type ChatTurnRead = {
@@ -289,8 +305,9 @@ export async function listMessages(
 export async function sendMessage(
   conversationId: number,
   content: string,
+  model?: string,
 ): Promise<ChatTurnRead> {
-  const body: MessageCreate = { content }
+  const body: MessageCreate = { content, model }
   return request<ChatTurnRead>(`/conversations/${conversationId}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -316,6 +333,7 @@ function parseSseEvent(raw: string): { event: string; data: string } | null {
 export async function streamMessage(
   conversationId: number,
   content: string,
+  model: string | undefined,
   handlers: {
     onChunk: (delta: string) => void
     onDone: (turn: ChatTurnRead) => void
@@ -331,7 +349,7 @@ export async function streamMessage(
       res = await fetch(`${BASE_URL}${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content } satisfies MessageCreate),
+        body: JSON.stringify({ content, model } satisfies MessageCreate),
       })
     } catch {
       throw new ApiError(0, 'Cannot reach the backend. Is it running?')

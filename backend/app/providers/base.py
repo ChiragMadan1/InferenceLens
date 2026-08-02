@@ -9,6 +9,7 @@ from app.logging_sdk import CallContext, CallFailure, CallOutcome, InstrumentedP
 
 class Provider(StrEnum):
     OPENAI = "openai"
+    ANTHROPIC = "anthropic"
 
 
 class ProviderMessage(TypedDict):

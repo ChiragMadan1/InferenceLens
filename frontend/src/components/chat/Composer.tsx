@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useRef } from 'react'
 import type { KeyboardEvent } from 'react'
+import type { ModelRead } from '../../api'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { Tooltip } from '../ui/Tooltip'
@@ -37,6 +38,12 @@ type ComposerProps = {
   disabled: boolean
   onDraftChange: (value: string) => void
   onSend: () => void
+  // spec 020 — models from GET /models, the currently selected id (undefined
+  // while the catalog is still loading), and the change handler. Page-local
+  // state lives in the caller (ChatPage/NewChatPage); Composer only renders it.
+  models: ModelRead[]
+  selectedModel: string | undefined
+  onModelChange: (modelId: string) => void
 }
 
 // FR13/FR14. Two state booleans only (`sending`, `disabled`) — everything
@@ -45,11 +52,12 @@ type ComposerProps = {
 // forwarded ref rather than a third boolean prop.
 //
 // Shared between the landing (new-chat) screen and ChatPage (spec 019) —
-// a single rounded, centered pill rather than an edge-to-edge bar. Attach,
-// model-chooser, and voice controls are inert placeholders (spec 019
-// FR13-14): normal-looking, tooltipped "Coming soon", no-op on click.
+// a single rounded, centered pill rather than an edge-to-edge bar. Attach
+// and voice controls are still inert placeholders (spec 019 FR13-14):
+// normal-looking, tooltipped "Coming soon", no-op on click. The model
+// chooser is live as of spec 020.
 export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function Composer(
-  { draft, sending, disabled, onDraftChange, onSend },
+  { draft, sending, disabled, onDraftChange, onSend, models, selectedModel, onModelChange },
   ref,
 ) {
   const blocked = sending || disabled
@@ -83,15 +91,28 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
                 {attachIcon}
               </IconButton>
             </Tooltip>
-            <Tooltip label="Coming soon">
-              <button
-                type="button"
-                onClick={() => {}}
-                className="flex items-center gap-1 rounded-full border border-hairline px-3 py-1.5 text-sm text-ink-secondary transition-colors duration-[var(--dur-instant)] ease-out hover:bg-surface-sunken hover:text-ink"
+            <div className="relative">
+              <label htmlFor="composer-model" className="sr-only">
+                Model
+              </label>
+              <select
+                id="composer-model"
+                value={selectedModel ?? ''}
+                onChange={(event) => onModelChange(event.target.value)}
+                disabled={blocked || models.length === 0}
+                className="appearance-none rounded-full border border-hairline bg-transparent py-1.5 pl-3 pr-7 text-sm text-ink-secondary transition-colors duration-[var(--dur-instant)] ease-out hover:bg-surface-sunken hover:text-ink focus-visible:outline-none disabled:opacity-50"
               >
-                Model {chevronIcon}
-              </button>
-            </Tooltip>
+                {models.length === 0 && <option value="">Model…</option>}
+                {models.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.display_name}
+                  </option>
+                ))}
+              </select>
+              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-secondary">
+                {chevronIcon}
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-1">

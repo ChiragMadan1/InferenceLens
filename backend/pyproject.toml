@@ -5,6 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     "aiokafka>=0.14.0",
     "alembic>=1.18.5",
+    "anthropic>=0.120.2",
     "duckdb>=1.5.5",
     "fastapi>=0.139.2",
     "httpx>=0.28.1",

@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   ApiError,
   getConversation,
+  getModels,
   listMessages,
   streamMessage,
   type ChatTurnRead,
@@ -112,6 +113,15 @@ function ChatPageContent({ conversationId }: { conversationId: number }) {
   const { data: conversation } = useResource(() => getConversation(conversationId), [
     conversationId,
   ])
+
+  // spec 020 — the model catalog, fetched once per mount (no caching layer,
+  // same tradeoff useResource already documents). Selection is page-local:
+  // `modelOverride` is undefined until the user touches the dropdown, so the
+  // effective model tracks the catalog's default until they pick something.
+  const { data: models } = useResource(() => getModels(), [])
+  const [modelOverride, setModelOverride] = useState<string | undefined>(undefined)
+  const defaultModelId = models?.find((m) => m.is_default)?.id
+  const selectedModel = modelOverride ?? defaultModelId
 
   const [messages, setMessages] = useState<MessageRead[]>([])
   const [total, setTotal] = useState(0)
@@ -229,11 +239,11 @@ function ChatPageContent({ conversationId }: { conversationId: number }) {
   useEffect(() => {
     if (initialDraftHandledRef.current) return
     if (historyLoading || gone || historyError || messages.length > 0) return
-    const state = location.state as { initialDraft?: string } | null
+    const state = location.state as { initialDraft?: string; initialModel?: string } | null
     const initialDraft = state?.initialDraft
     if (!initialDraft) return
     initialDraftHandledRef.current = true
-    void handleSend(initialDraft)
+    void handleSend(initialDraft, state?.initialModel)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyLoading, gone, historyError, messages.length])
 
@@ -250,9 +260,13 @@ function ChatPageContent({ conversationId }: { conversationId: number }) {
   // plain callbacks (not awaited by streamMessage — FR21), that ordering has
   // to be reconstructed here via `needsResync` rather than inside the resync
   // itself.
-  async function handleSend(overrideContent?: string) {
+  async function handleSend(overrideContent?: string, overrideModel?: string) {
     const content = overrideContent ?? draft.trim()
     if (sending || content === '') return
+    // overrideModel carries the landing page's dropdown choice through the
+    // initial-draft handoff (spec 020); a regular send uses this page's own
+    // selection instead.
+    const model = overrideModel ?? selectedModel
     setDraft('')
     scroll.markAppend()
     scroll.beginStream()
@@ -268,7 +282,7 @@ function ChatPageContent({ conversationId }: { conversationId: number }) {
     let needsResync = false
 
     try {
-      await streamMessage(conversationId, content, {
+      await streamMessage(conversationId, content, model, {
         onChunk: (delta) => {
           if (mountedRef.current) {
             setStreamingText((prev) => (prev ?? '') + delta)
@@ -514,6 +528,9 @@ function ChatPageContent({ conversationId }: { conversationId: number }) {
         disabled={composerDisabled}
         onDraftChange={setDraft}
         onSend={() => void handleSend()}
+        models={models ?? []}
+        selectedModel={selectedModel}
+        onModelChange={setModelOverride}
       />
     </div>
   )

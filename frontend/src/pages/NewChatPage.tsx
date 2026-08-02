@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
-import { ApiError, createConversation } from '../api'
+import { ApiError, createConversation, getModels } from '../api'
 import { Composer } from '../components/chat/Composer'
 import { NoticeBanner } from '../components/ui/NoticeBanner'
+import { useResource } from '../hooks/useResource'
 
 const DUR_BASE = 0.24
 const EASE_OUT = [0.22, 1, 0.36, 1] as const
@@ -22,6 +23,14 @@ export function NewChatPage() {
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // spec 020 — same page-local model selection as ChatPage; the choice made
+  // here rides along to /c/:id via location.state (mirroring initialDraft)
+  // since this page never itself calls sendMessage/streamMessage.
+  const { data: models } = useResource(() => getModels(), [])
+  const [modelOverride, setModelOverride] = useState<string | undefined>(undefined)
+  const defaultModelId = models?.find((m) => m.is_default)?.id
+  const selectedModel = modelOverride ?? defaultModelId
+
   useEffect(() => {
     textareaRef.current?.focus()
   }, [])
@@ -33,7 +42,9 @@ export function NewChatPage() {
     setError(null)
     try {
       const created = await createConversation()
-      navigate(`/c/${created.id}`, { state: { initialDraft: content } })
+      navigate(`/c/${created.id}`, {
+        state: { initialDraft: content, initialModel: selectedModel },
+      })
     } catch (err) {
       setStarting(false)
       setError(err instanceof ApiError ? err.detail : 'Could not start a new conversation.')
@@ -74,6 +85,9 @@ export function NewChatPage() {
           disabled={false}
           onDraftChange={setDraft}
           onSend={() => void handleSend()}
+          models={models ?? []}
+          selectedModel={selectedModel}
+          onModelChange={setModelOverride}
         />
       </div>
     </div>

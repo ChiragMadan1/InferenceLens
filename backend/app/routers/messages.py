@@ -10,11 +10,12 @@ from app.core.config import settings
 from app.db import get_db
 from app.models import MessageRole
 from app.providers import (
-    ChatProvider,
     ProviderError,
     ProviderMessage,
     get_chat_provider,
 )
+from app.providers.catalog import available_models
+from app.providers.catalog import resolve as resolve_model
 from app.repositories.conversations import ConversationRepository
 from app.repositories.messages import MessageRepository
 from app.routers.conversations import get_conversation_repo
@@ -28,6 +29,23 @@ router = APIRouter(prefix="/conversations", tags=["messages"])
 
 def get_message_repo(db: Session = Depends(get_db)) -> MessageRepository:
     return MessageRepository(db)
+
+
+def _resolve_chat_model(requested_model: str | None) -> str:
+    """The model id to use for this turn, or a 422 naming the allowed ids.
+
+    Covers both "unknown to the catalog" and "known but its provider has no
+    key configured" (spec 020 FR4/edge cases 2-3) — both look the same to a
+    caller: not one of the ids GET /models offers.
+    """
+    resolved_id = requested_model or settings.DEFAULT_CHAT_MODEL
+    if resolve_model(resolved_id) is None:
+        allowed_ids = sorted(model_id for model_id, _ in available_models())
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown or unavailable model {resolved_id!r}. Allowed ids: {allowed_ids}",
+        )
+    return resolved_id
 
 
 @router.get("/{conversation_id}/messages", response_model=Page[MessageRead])
@@ -57,13 +75,17 @@ async def send_message(
     background_tasks: BackgroundTasks,
     conversation_repo: ConversationRepository = Depends(get_conversation_repo),
     message_repo: MessageRepository = Depends(get_message_repo),
-    provider: ChatProvider = Depends(get_chat_provider),
 ) -> ChatTurnRead:
     conversation = conversation_repo.get(conversation_id)
     if conversation is None:
         raise HTTPException(
             status_code=404, detail=f"Conversation {conversation_id} not found."
         )
+
+    # Resolved and validated before anything is stored (spec 020 edge cases
+    # 2/4) — an invalid model leaves no orphan user message.
+    resolved_model = _resolve_chat_model(body.model)
+    provider = get_chat_provider(model=resolved_model)
 
     user_message = message_repo.create(conversation_id, MessageRole.USER, body.content)
 
@@ -75,7 +97,7 @@ async def send_message(
     result = await provider.send_message(
         messages=provider_messages,
         system=settings.SYSTEM_PROMPT,
-        model=settings.OPENAI_MODEL,
+        model=resolved_model,
         max_tokens=settings.MAX_TOKENS,
         temperature=settings.TEMPERATURE,
         conversation_id=conversation_id,
@@ -135,9 +157,8 @@ async def stream_message(
     background_tasks: BackgroundTasks,
     conversation_repo: ConversationRepository = Depends(get_conversation_repo),
     message_repo: MessageRepository = Depends(get_message_repo),
-    provider: ChatProvider = Depends(get_chat_provider),
 ) -> StreamingResponse:
-    # FR11 — 404/409 must resolve before a single byte streams: the HTTP
+    # FR11 — 404/409/422 must resolve before a single byte streams: the HTTP
     # status is committed the instant StreamingResponse is returned, so
     # there is no way to "downgrade" a 200 once streaming has begun.
     conversation = conversation_repo.get(conversation_id)
@@ -145,6 +166,12 @@ async def stream_message(
         raise HTTPException(
             status_code=404, detail=f"Conversation {conversation_id} not found."
         )
+
+    # Resolved and validated before the in-flight marker is set or the user
+    # message is stored (spec 020 edge cases 2/4) — an invalid model leaves
+    # no orphan row and never locks the conversation.
+    resolved_model = _resolve_chat_model(body.model)
+    provider = get_chat_provider(model=resolved_model)
 
     # FR14 — checked and inserted before the user message is stored, so a
     # rejected send leaves no orphan row. No await between the membership
@@ -171,7 +198,7 @@ async def stream_message(
             async for chunk in provider.stream_message(
                 messages=provider_messages,
                 system=settings.SYSTEM_PROMPT,
-                model=settings.OPENAI_MODEL,
+                model=resolved_model,
                 max_tokens=settings.MAX_TOKENS,
                 temperature=settings.TEMPERATURE,
                 conversation_id=conversation_id,

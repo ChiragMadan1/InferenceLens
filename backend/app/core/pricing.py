@@ -8,6 +8,9 @@ PRICE_MAP_VERSION = "2026-08-01"
 PRICE_MAP: dict[str, tuple[Decimal, Decimal]] = {
     "gpt-5.6-terra": (Decimal("2.00"), Decimal("12.00")),
     "gpt-5.6-luna": (Decimal("0.20"), Decimal("1.20")),
+    # Standard rate. Intro pricing ($2.00/$10.00) runs through 2026-08-31;
+    # bump this when it lapses — stored costs are NOT backfilled.
+    "claude-sonnet-5": (Decimal("3.00"), Decimal("15.00")),
 }
 
 _MILLION = Decimal("1000000")
