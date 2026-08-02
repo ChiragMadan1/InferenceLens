@@ -108,6 +108,116 @@ step, so a fresh clone has no tables until you add a model and migrate:
 
 See "Database migrations" in `CLAUDE.md` for the full workflow.
 
+## DuckDB analytics engine (optional, read-only)
+
+Spec 018. `GET /logs/stats` and `GET /logs/timeseries` (the dashboard's
+KPI tiles and charts) can be answered two ways: the original SQLAlchemy
+queries, or DuckDB — an embedded, columnar SQL engine that's a better
+fit for "scan and aggregate" workloads. The API contract doesn't
+change; this is purely an internal engine swap, and it's on by default
+whenever it can be (see "Fallback" below).
+
+### How DuckDB "sits on top of" SQLite
+
+There's no second copy of the data, no sync job, no ETL. DuckDB ships a
+"sqlite scanner" extension that opens a SQLite file directly and reads
+its tables as if they were DuckDB's own. On every `/logs/stats` or
+`/logs/timeseries` request (when this engine is selected),
+`app/repositories/analytics_duckdb.py` does, in order:
+
+1. Open a fresh **in-memory** DuckDB connection — nothing is ever
+   written to disk on DuckDB's side.
+2. `INSTALL sqlite; LOAD sqlite;` — loads the extension (a one-time
+   network download the first time this ever runs on a machine;
+   cached locally after that).
+3. `ATTACH 'app.db' AS src (TYPE sqlite, READ_ONLY)` — points DuckDB at
+   the *same* `app.db` file SQLAlchemy already writes to, read-only.
+4. Run the aggregate query directly against `src.inference_logs`: one
+   statement for `/timeseries`, or five for `/stats` (headline +
+   percentiles in one statement, plus one per breakdown — by model,
+   provider, call type, status).
+5. Close the connection.
+
+So "on top of SQLite" means exactly that: DuckDB's engine reads the
+same `.db` file on disk (translating SQLite's declared types to its
+own — `INTEGER→BIGINT`, `NUMERIC→DOUBLE`, the datetime text columns →
+`TIMESTAMP`), and computes the aggregate itself instead of asking
+SQLite to.
+
+### Which APIs use it
+
+Only `GET /logs/stats` and `GET /logs/timeseries`. Everything else —
+`GET /logs`, `GET /logs/{request_id}`, and every write — always goes
+through the normal SQLAlchemy path in `app/db.py`. DuckDB only exists
+for the lifetime of those two requests, per request.
+
+### Fallback / kill switch
+
+Controlled by `ANALYTICS_ENGINE` in `.env` (see `.env.example`),
+re-evaluated on every request:
+
+| Value | Behavior |
+|---|---|
+| `auto` (default) | DuckDB if `DATABASE_URL` points at a real SQLite file; the SQLAlchemy path otherwise (the in-memory DB tests use, or a Postgres URL) |
+| `sqlite` | Always the SQLAlchemy path — the manual kill switch if DuckDB ever misbehaves |
+| `duckdb` | Force DuckDB; if `DATABASE_URL` isn't a file-based SQLite URL that's now a config mistake, and the request fails loudly (500 + an ERROR log) instead of silently falling back |
+
+Each request logs a DEBUG line naming the engine it used, e.g.
+`GET /logs/stats: analytics engine=duckdb`.
+
+### Does it touch the write path?
+
+No, in two senses. First, DuckDB attaches **read-only** — an attempted
+write against the attached database raises an error; it's physically
+incapable of writing. Second, every write in the app (chat messages,
+ingested inference logs) still goes exclusively through the
+SQLAlchemy `engine`/`SessionLocal` in `app/db.py`; nothing in the
+ingestion path was touched by this feature. DuckDB is a second,
+*temporary* reader of the same file — which is also why this isn't "a
+second datastore": there's still exactly one copy of the data and one
+write path.
+
+It also doesn't block, or get blocked by, a write happening at the
+same time — SQLite's WAL journal mode (spec 016) means a DuckDB read
+sees the last committed snapshot instantly, with no lock contention in
+either direction.
+
+### Why it's faster
+
+Two concrete things changed, not just "DuckDB is fast in general":
+
+- **Fewer round trips.** The old code computed each percentile
+  (p50/p95/p99) with its own query (`ORDER BY ... LIMIT 1 OFFSET k`) —
+  6 separate queries just for latency + TTFT. DuckDB computes all of
+  them in the *same* statement as the headline counts/sums, via its
+  `quantile_disc()` aggregate function.
+- **No Python-side loop.** `/logs/timeseries` used to pull every
+  matching row into Python and bucket/sort it by hand. The DuckDB
+  version does the bucketing (`strftime`) and percentiles inside one
+  `GROUP BY` statement — the database does the work, not the app.
+
+DuckDB is also a columnar, vectorized engine (it processes values in
+batches, not row-by-row), which suits this "scan and aggregate" shape
+better than SQLite's row-at-a-time engine — but at this app's demo
+scale, the query-count reduction above is what actually matters.
+
+### Does it run as a separate service?
+
+No — there's no DuckDB server, process, or port to run. `duckdb` is
+just a Python library (`import duckdb`); every connection is opened,
+used, and closed inside the same request, inside the FastAPI process,
+the same way you'd use the stdlib `sqlite3` module. Installing the
+package (already done via `uv add duckdb`) is the entire setup.
+
+### Trying it locally
+
+    # backend/.env
+    ANALYTICS_ENGINE=duckdb   # or sqlite, or leave unset for auto
+
+Restart `make backend`, hit `/logs/stats` or `/logs/timeseries` (via
+the frontend dashboard or Swagger UI), and check the backend log for
+the `analytics engine=...` DEBUG line to confirm which path ran.
+
 ## Kafka event pipeline (local dev, optional)
 
 Spec 017. Inference log events normally travel HTTP fire-and-forget

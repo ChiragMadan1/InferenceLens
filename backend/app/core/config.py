@@ -12,6 +12,12 @@ class EventTransport(StrEnum):
     KAFKA = "kafka"
 
 
+class AnalyticsEngine(StrEnum):
+    AUTO = "auto"
+    SQLITE = "sqlite"
+    DUCKDB = "duckdb"
+
+
 class Settings(BaseSettings):
     """All runtime configuration. Values load from environment variables,
     falling back to `.env` in the backend/ directory, falling back to the
@@ -68,6 +74,14 @@ class Settings(BaseSettings):
     KAFKA_CONSUMER_GROUP: str = "ingestion"
     KAFKA_CONSUMER_MAX_RECORDS: int = 100
     KAFKA_CONSUMER_BATCH_TIMEOUT_MS: int = 1000
+
+    # Engine backing GET /logs/stats and GET /logs/timeseries (spec 018).
+    # "auto" (default): DuckDB when DATABASE_URL is a file-based SQLite URL,
+    # else the SQLAlchemy path (in-memory test DBs and Postgres can't be
+    # DuckDB-attached). "sqlite": always the SQLAlchemy path (kill switch).
+    # "duckdb": force DuckDB — a non-file-SQLite DATABASE_URL is then a
+    # configuration error (500 + ERROR log), never a silent fallback.
+    ANALYTICS_ENGINE: AnalyticsEngine = AnalyticsEngine.AUTO
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

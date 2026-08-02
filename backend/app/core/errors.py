@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
 from app.providers.base import ProviderError
+from app.repositories.analytics_duckdb import AnalyticsEngineError
 from app.schemas import ErrorResponse
 
 logger = logging.getLogger(__name__)
@@ -42,4 +43,14 @@ def register_exception_handlers(app: FastAPI) -> None:
             content=ErrorResponse(
                 detail=f"The model provider failed to respond ({exc.error_type})."
             ).model_dump(),
+        )
+
+    @app.exception_handler(AnalyticsEngineError)
+    async def analytics_engine_error_handler(
+        request: Request, exc: AnalyticsEngineError
+    ) -> JSONResponse:
+        logger.error("Analytics engine failure on %s %s: %s", request.method, request.url.path, exc)
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(detail="The analytics query failed.").model_dump(),
         )

@@ -1,3 +1,4 @@
+import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime
@@ -9,7 +10,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from app.models import InferenceLog
+from app.repositories import analytics_duckdb
 from app.schemas import percentile
+
+logger = logging.getLogger(__name__)
 
 _BUCKET_FORMATS: dict[str, str] = {
     "minute": "%Y-%m-%d %H:%M:00",
@@ -253,6 +257,19 @@ class InferenceLogRepository:
         model: str | None = None,
         provider: str | None = None,
     ) -> StatsRow:
+        if analytics_duckdb.should_use_duckdb():
+            logger.debug("GET /logs/stats: analytics engine=duckdb")
+            return analytics_duckdb.stats(
+                window_from=window_from,
+                window_to=window_to,
+                conversation_id=conversation_id,
+                status=status,
+                call_type=call_type,
+                model=model,
+                provider=provider,
+            )
+        logger.debug("GET /logs/stats: analytics engine=sqlite")
+
         filters = self._filters(
             window_from=window_from,
             window_to=window_to,
@@ -347,6 +364,21 @@ class InferenceLogRepository:
         to this method; porting to another database means replacing this one
         expression, not chasing date arithmetic across the codebase.
         """
+        if analytics_duckdb.should_use_duckdb():
+            logger.debug("GET /logs/timeseries: analytics engine=duckdb")
+            return analytics_duckdb.timeseries(
+                bucket=bucket,
+                group_by=group_by,
+                window_from=window_from,
+                window_to=window_to,
+                conversation_id=conversation_id,
+                status=status,
+                call_type=call_type,
+                model=model,
+                provider=provider,
+            )
+        logger.debug("GET /logs/timeseries: analytics engine=sqlite")
+
         filters = self._filters(
             window_from=window_from,
             window_to=window_to,
