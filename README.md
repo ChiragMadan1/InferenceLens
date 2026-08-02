@@ -88,11 +88,79 @@ is running.
 
 ## Running tests
 
+Backend only — there is no frontend test suite in this project. Tests
+live in `backend/tests/`, run via `pytest`, and are only ever written or
+run through the `generate-tests` skill (see `CLAUDE.md` "Code
+standards") — this section is about *running* what already exists, not
+when to add more.
+
+### Run everything
+
     make test
 
-Tests run against an isolated in-memory SQLite DB (see
-`backend/tests/conftest.py`) — they never touch `backend/app.db` and
-don't require migrations to have been run first.
+Equivalent, from `backend/`:
+
+    uv run pytest -v
+
+No manual venv activation needed — `uv run` resolves `backend/.venv`
+automatically. No services need to be running first: tests never hit a
+real database, network, or the dev `.env`.
+
+### Run one file
+
+    cd backend
+    uv run pytest tests/test_recorder.py -v
+
+### Run one test
+
+    cd backend
+    uv run pytest tests/test_recorder.py -k "test_invoke_error_publishes_event_and_reraises" -v
+
+`-k` matches on substring, so a partial name works too, e.g.
+`-k "cancelled"` runs every test with "cancelled" in its name across
+whichever file(s) you pointed pytest at.
+
+### Test database isolation
+
+`backend/tests/conftest.py` overrides `get_db` with an in-memory SQLite
+engine, rebuilt (`Base.metadata.create_all` / `drop_all`) before and
+after every test via an autouse fixture. Tests never touch
+`backend/app.db` and don't require `make db-upgrade` to have been run
+first — the schema comes from `models.py` directly, not migrations
+(which means migration drift only surfaces at `make db-upgrade` time,
+not in the test suite).
+
+### Two styles of test in this repo
+
+**Router-level**, using the `client` fixture from `conftest.py`
+(`TestClient` wrapping the FastAPI app) — exercises a request through
+routing, dependency injection, and the DB in one pass. Currently just
+`test_health.py`; this is the pattern to follow for a new resource's
+endpoints (see the commented example at the bottom of that file).
+
+**Unit-level**, calling a class or function directly with no FastAPI
+app, no `TestClient`, and no HTTP in the loop. Where a test needs a
+database (e.g. a repository method), it builds its own throwaway
+in-memory SQLite session inline rather than reusing the `client`
+fixture's engine — see the `db_session`/`session_factory` fixtures in
+`test_ingest_repository.py` and `test_consumer.py`. This is the
+current suite's dominant style, covering the app's structural
+guarantees and highest-risk logic:
+
+| File | What it exercises |
+|---|---|
+| `test_recorder.py` | `CallRecorder` — the "exactly one log per call" guarantee: success, error, cancellation, and every `describe_*`/processor failure mode |
+| `test_events.py` | `config_hash` determinism |
+| `test_pricing.py` | `compute_cost` — billing math and its `None`-on-unknown-input edge cases |
+| `test_redaction.py` | `redact_event` — PII scrubbing and its fail-open-to-original-text behavior |
+| `test_titling.py` | `sanitize_title` / `should_title` — the auto-title decision logic |
+| `test_schemas.py` | `percentile`, log-preview helpers, and Pydantic field validators |
+| `test_ingest_repository.py` | `InferenceLogRepository.create_many_skip_duplicates` — Kafka at-least-once dedup |
+| `test_consumer.py` | `InferenceLogConsumer._parse` / `_write_logs` — malformed-message and DB-failure handling |
+| `test_openai_provider.py` | `OpenAIProvider`'s response/error mapping (`describe_*`, `_map_response`) |
+| `test_publisher.py` | `HTTPEventPublisher.publish` — the "never raises" contract |
+| `test_errors.py` | `app/core/errors.py` exception handlers — exception → clean JSON translation |
+| `test_analytics_duckdb.py` | `should_use_duckdb`, `sqlite_file_path`, `_escape_literal` — analytics engine routing |
 
 ## Linting
 
