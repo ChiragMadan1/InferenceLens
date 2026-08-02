@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "3d26fb29-4f01-4b22-beaa-63473ea4a76d",
     "name": "App",
-    "description": "Inference-logging chatbot API: conversations, messages, the chat turn endpoint that calls the configured provider (OpenAI), inference log ingestion, and the read-only logs API for observability.",
+    "description": "Inference-logging chatbot API: conversations, messages (including a streamed SSE chat turn), the chat turn endpoint that calls the configured provider (OpenAI), inference log ingestion, and the read-only logs API for observability (list, get, aggregate stats, and timeseries).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -612,6 +612,272 @@
                 }
               ],
               "body": "{\n  \"detail\": \"The model provider failed to respond (timeout).\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Stream Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/conversations/:conversation_id/messages/stream",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "conversations",
+                ":conversation_id",
+                "messages",
+                "stream"
+              ],
+              "variable": [
+                {
+                  "key": "conversation_id",
+                  "value": "{{conversationId}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Why is our nightly CI job flaking on the migration step about one run in five?\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "OK - SSE stream (chunk events then done)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "text/event-stream"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/conversations/1/messages/stream",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "conversations",
+                    "1",
+                    "messages",
+                    "stream"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"content\": \"Why is our nightly CI job flaking on the migration step about one run in five?\"\n}"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "text",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "text/event-stream"
+                },
+                {
+                  "key": "Cache-Control",
+                  "value": "no-cache"
+                },
+                {
+                  "key": "X-Accel-Buffering",
+                  "value": "no"
+                }
+              ],
+              "body": "event: chunk\ndata: {\"delta\":\"Most likely a resource contention issue: \"}\n\nevent: chunk\ndata: {\"delta\":\"if five parallel jobs share one runner pool, one in five landing on a cold cache would produce exactly this flake rate.\"}\n\nevent: done\ndata: {\"user_message\":{\"id\":5,\"conversation_id\":1,\"role\":\"user\",\"content\":\"Why is our nightly CI job flaking on the migration step about one run in five?\",\"created_at\":\"2026-08-01T16:40:00.221Z\"},\"assistant_message\":{\"id\":6,\"conversation_id\":1,\"role\":\"assistant\",\"content\":\"Most likely a resource contention issue: if five parallel jobs share one runner pool, one in five landing on a cold cache would produce exactly this flake rate.\",\"created_at\":\"2026-08-01T16:40:03.877Z\"}}\n\n"
+            },
+            {
+              "name": "OK - SSE stream ends with a provider error event",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "text/event-stream"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/conversations/1/messages/stream",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "conversations",
+                    "1",
+                    "messages",
+                    "stream"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"content\": \"Why is our nightly CI job flaking on the migration step about one run in five?\"\n}"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "text",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "text/event-stream"
+                },
+                {
+                  "key": "Cache-Control",
+                  "value": "no-cache"
+                },
+                {
+                  "key": "X-Accel-Buffering",
+                  "value": "no"
+                }
+              ],
+              "body": "event: chunk\ndata: {\"delta\":\"Checking the runner logs\"}\n\nevent: error\ndata: {\"detail\":\"The model provider failed to respond (timeout).\"}\n\n"
+            },
+            {
+              "name": "Not Found - conversation does not exist",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "text/event-stream"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/conversations/999999/messages/stream",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "conversations",
+                    "999999",
+                    "messages",
+                    "stream"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"content\": \"Why is our nightly CI job flaking on the migration step about one run in five?\"\n}"
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": \"Conversation 999999 not found.\"\n}"
+            },
+            {
+              "name": "Conflict - a response is already streaming for this conversation",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "text/event-stream"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/conversations/1/messages/stream",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "conversations",
+                    "1",
+                    "messages",
+                    "stream"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"content\": \"Why is our nightly CI job flaking on the migration step about one run in five?\"\n}"
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": \"A response is already being generated for this conversation.\"\n}"
+            },
+            {
+              "name": "Validation Error - empty content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "text/event-stream"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/conversations/1/messages/stream",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "conversations",
+                    "1",
+                    "messages",
+                    "stream"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"content\": \"   \"\n}"
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": [\n    {\n      \"type\": \"value_error\",\n      \"loc\": [\n        \"body\",\n        \"content\"\n      ],\n      \"msg\": \"Value error, content must not be empty or whitespace-only\",\n      \"input\": \"   \",\n      \"ctx\": {\n        \"error\": {}\n      }\n    }\n  ]\n}"
             }
           ]
         }
@@ -1290,6 +1556,392 @@
                 }
               ],
               "body": "{\n  \"detail\": [\n    {\n      \"type\": \"int_parsing\",\n      \"loc\": [\n        \"query\",\n        \"conversation_id\"\n      ],\n      \"msg\": \"Input should be a valid integer, unable to parse string as an integer\",\n      \"input\": \"abc\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Logs Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/logs/stats?from=2026-08-01T00:00:00Z&to=2026-08-02T00:00:00Z",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "logs",
+                "stats"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-08-01T00:00:00Z"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-08-02T00:00:00Z"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "OK - full window, no filters",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs/stats?from=2026-08-01T00:00:00Z&to=2026-08-02T00:00:00Z",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs",
+                    "stats"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2026-08-01T00:00:00Z"
+                    },
+                    {
+                      "key": "to",
+                      "value": "2026-08-02T00:00:00Z"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"window\": {\n    \"from\": \"2026-08-01T00:00:00Z\",\n    \"to\": \"2026-08-02T00:00:00Z\"\n  },\n  \"total_calls\": 4,\n  \"success_count\": 2,\n  \"error_count\": 1,\n  \"cancelled_count\": 1,\n  \"error_rate\": 0.25,\n  \"latency\": {\n    \"p50_ms\": 1230,\n    \"p95_ms\": 30045,\n    \"p99_ms\": 30045,\n    \"avg_ms\": 8977,\n    \"max_ms\": 30045\n  },\n  \"ttft\": null,\n  \"tokens\": {\n    \"input\": 1557,\n    \"output\": 291,\n    \"total\": 1848\n  },\n  \"cost_usd\": \"0.004669\",\n  \"cost_coverage\": 0.5,\n  \"by_model\": [\n    {\n      \"key\": \"gpt-5.6-terra\",\n      \"is_other\": false,\n      \"calls\": 3,\n      \"error_count\": 1,\n      \"error_rate\": 0.3333,\n      \"latency_p95_ms\": 30045,\n      \"input_tokens\": 1412,\n      \"output_tokens\": 284,\n      \"cost_usd\": \"0.004632\"\n    },\n    {\n      \"key\": \"gpt-5.6-luna\",\n      \"is_other\": false,\n      \"calls\": 1,\n      \"error_count\": 0,\n      \"error_rate\": 0.0,\n      \"latency_p95_ms\": 812,\n      \"input_tokens\": 145,\n      \"output_tokens\": 7,\n      \"cost_usd\": \"0.000037\"\n    }\n  ],\n  \"by_provider\": [\n    {\n      \"key\": \"openai\",\n      \"is_other\": false,\n      \"calls\": 4,\n      \"error_count\": 1,\n      \"error_rate\": 0.25,\n      \"latency_p95_ms\": 30045,\n      \"input_tokens\": 1557,\n      \"output_tokens\": 291,\n      \"cost_usd\": \"0.004669\"\n    }\n  ],\n  \"by_call_type\": [\n    {\n      \"key\": \"chat\",\n      \"is_other\": false,\n      \"calls\": 3,\n      \"error_count\": 1,\n      \"error_rate\": 0.3333,\n      \"latency_p95_ms\": 30045,\n      \"input_tokens\": 1412,\n      \"output_tokens\": 284,\n      \"cost_usd\": \"0.004632\"\n    },\n    {\n      \"key\": \"title\",\n      \"is_other\": false,\n      \"calls\": 1,\n      \"error_count\": 0,\n      \"error_rate\": 0.0,\n      \"latency_p95_ms\": 812,\n      \"input_tokens\": 145,\n      \"output_tokens\": 7,\n      \"cost_usd\": \"0.000037\"\n    }\n  ],\n  \"by_status\": [\n    {\n      \"key\": \"success\",\n      \"is_other\": false,\n      \"calls\": 2,\n      \"error_count\": 0,\n      \"error_rate\": 0.0,\n      \"latency_p95_ms\": 3820,\n      \"input_tokens\": 757,\n      \"output_tokens\": 291,\n      \"cost_usd\": \"0.004669\"\n    },\n    {\n      \"key\": \"cancelled\",\n      \"is_other\": false,\n      \"calls\": 1,\n      \"error_count\": 0,\n      \"error_rate\": 0.0,\n      \"latency_p95_ms\": 1230,\n      \"input_tokens\": 402,\n      \"output_tokens\": 0,\n      \"cost_usd\": null\n    },\n    {\n      \"key\": \"error\",\n      \"is_other\": false,\n      \"calls\": 1,\n      \"error_count\": 1,\n      \"error_rate\": 1.0,\n      \"latency_p95_ms\": 30045,\n      \"input_tokens\": 398,\n      \"output_tokens\": 0,\n      \"cost_usd\": null\n    }\n  ]\n}"
+            },
+            {
+              "name": "OK - filtered by conversation_id (no successes, cost_usd null)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs/stats?from=2026-08-01T00:00:00Z&to=2026-08-02T00:00:00Z&conversation_id=2",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs",
+                    "stats"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2026-08-01T00:00:00Z"
+                    },
+                    {
+                      "key": "to",
+                      "value": "2026-08-02T00:00:00Z"
+                    },
+                    {
+                      "key": "conversation_id",
+                      "value": "2"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"window\": {\n    \"from\": \"2026-08-01T00:00:00Z\",\n    \"to\": \"2026-08-02T00:00:00Z\"\n  },\n  \"total_calls\": 2,\n  \"success_count\": 0,\n  \"error_count\": 1,\n  \"cancelled_count\": 1,\n  \"error_rate\": 0.5,\n  \"latency\": {\n    \"p50_ms\": 1230,\n    \"p95_ms\": 30045,\n    \"p99_ms\": 30045,\n    \"avg_ms\": 15638,\n    \"max_ms\": 30045\n  },\n  \"ttft\": null,\n  \"tokens\": {\n    \"input\": 800,\n    \"output\": 0,\n    \"total\": 800\n  },\n  \"cost_usd\": null,\n  \"cost_coverage\": 0.0,\n  \"by_model\": [\n    {\n      \"key\": \"gpt-5.6-terra\",\n      \"is_other\": false,\n      \"calls\": 2,\n      \"error_count\": 1,\n      \"error_rate\": 0.5,\n      \"latency_p95_ms\": 30045,\n      \"input_tokens\": 800,\n      \"output_tokens\": 0,\n      \"cost_usd\": null\n    }\n  ],\n  \"by_provider\": [\n    {\n      \"key\": \"openai\",\n      \"is_other\": false,\n      \"calls\": 2,\n      \"error_count\": 1,\n      \"error_rate\": 0.5,\n      \"latency_p95_ms\": 30045,\n      \"input_tokens\": 800,\n      \"output_tokens\": 0,\n      \"cost_usd\": null\n    }\n  ],\n  \"by_call_type\": [\n    {\n      \"key\": \"chat\",\n      \"is_other\": false,\n      \"calls\": 2,\n      \"error_count\": 1,\n      \"error_rate\": 0.5,\n      \"latency_p95_ms\": 30045,\n      \"input_tokens\": 800,\n      \"output_tokens\": 0,\n      \"cost_usd\": null\n    }\n  ],\n  \"by_status\": [\n    {\n      \"key\": \"cancelled\",\n      \"is_other\": false,\n      \"calls\": 1,\n      \"error_count\": 0,\n      \"error_rate\": 0.0,\n      \"latency_p95_ms\": 1230,\n      \"input_tokens\": 402,\n      \"output_tokens\": 0,\n      \"cost_usd\": null\n    },\n    {\n      \"key\": \"error\",\n      \"is_other\": false,\n      \"calls\": 1,\n      \"error_count\": 1,\n      \"error_rate\": 1.0,\n      \"latency_p95_ms\": 30045,\n      \"input_tokens\": 398,\n      \"output_tokens\": 0,\n      \"cost_usd\": null\n    }\n  ]\n}"
+            },
+            {
+              "name": "OK - no matching logs in window",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs/stats?from=2026-08-01T00:00:00Z&to=2026-08-02T00:00:00Z&conversation_id=999999",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs",
+                    "stats"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2026-08-01T00:00:00Z"
+                    },
+                    {
+                      "key": "to",
+                      "value": "2026-08-02T00:00:00Z"
+                    },
+                    {
+                      "key": "conversation_id",
+                      "value": "999999"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"window\": {\n    \"from\": \"2026-08-01T00:00:00Z\",\n    \"to\": \"2026-08-02T00:00:00Z\"\n  },\n  \"total_calls\": 0,\n  \"success_count\": 0,\n  \"error_count\": 0,\n  \"cancelled_count\": 0,\n  \"error_rate\": 0.0,\n  \"latency\": null,\n  \"ttft\": null,\n  \"tokens\": {\n    \"input\": 0,\n    \"output\": 0,\n    \"total\": 0\n  },\n  \"cost_usd\": null,\n  \"cost_coverage\": 0.0,\n  \"by_model\": [],\n  \"by_provider\": [],\n  \"by_call_type\": [],\n  \"by_status\": []\n}"
+            },
+            {
+              "name": "Validation Error - from must be earlier than to",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs/stats?from=2026-08-02T00:00:00Z&to=2026-08-01T00:00:00Z",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs",
+                    "stats"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2026-08-02T00:00:00Z"
+                    },
+                    {
+                      "key": "to",
+                      "value": "2026-08-01T00:00:00Z"
+                    }
+                  ]
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": \"from must be earlier than to\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Logs Timeseries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/logs/timeseries?from=2026-08-01T14:00:00Z&to=2026-08-01T17:00:00Z&bucket=hour&group_by=model",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "logs",
+                "timeseries"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-08-01T14:00:00Z"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-08-01T17:00:00Z"
+                },
+                {
+                  "key": "bucket",
+                  "value": "hour"
+                },
+                {
+                  "key": "group_by",
+                  "value": "model"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "OK - hourly buckets grouped by model",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs/timeseries?from=2026-08-01T14:00:00Z&to=2026-08-01T17:00:00Z&bucket=hour&group_by=model",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs",
+                    "timeseries"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2026-08-01T14:00:00Z"
+                    },
+                    {
+                      "key": "to",
+                      "value": "2026-08-01T17:00:00Z"
+                    },
+                    {
+                      "key": "bucket",
+                      "value": "hour"
+                    },
+                    {
+                      "key": "group_by",
+                      "value": "model"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"window\": {\n    \"from\": \"2026-08-01T14:00:00Z\",\n    \"to\": \"2026-08-01T17:00:00Z\"\n  },\n  \"bucket\": \"hour\",\n  \"group_by\": \"model\",\n  \"bucket_count\": 3,\n  \"series\": [\n    {\n      \"key\": \"gpt-5.6-terra\",\n      \"is_other\": false,\n      \"points\": [\n        {\n          \"t\": \"2026-08-01T14:00:00Z\",\n          \"calls\": 0,\n          \"error_count\": 0,\n          \"cancelled_count\": 0,\n          \"latency_p50_ms\": null,\n          \"latency_p95_ms\": null,\n          \"input_tokens\": 0,\n          \"output_tokens\": 0,\n          \"cost_usd\": null\n        },\n        {\n          \"t\": \"2026-08-01T15:00:00Z\",\n          \"calls\": 1,\n          \"error_count\": 0,\n          \"cancelled_count\": 0,\n          \"latency_p50_ms\": 3820,\n          \"latency_p95_ms\": 3820,\n          \"input_tokens\": 612,\n          \"output_tokens\": 284,\n          \"cost_usd\": \"0.004632\"\n        },\n        {\n          \"t\": \"2026-08-01T16:00:00Z\",\n          \"calls\": 2,\n          \"error_count\": 1,\n          \"cancelled_count\": 1,\n          \"latency_p50_ms\": 1230,\n          \"latency_p95_ms\": 30045,\n          \"input_tokens\": 800,\n          \"output_tokens\": 0,\n          \"cost_usd\": null\n        }\n      ]\n    },\n    {\n      \"key\": \"gpt-5.6-luna\",\n      \"is_other\": false,\n      \"points\": [\n        {\n          \"t\": \"2026-08-01T14:00:00Z\",\n          \"calls\": 0,\n          \"error_count\": 0,\n          \"cancelled_count\": 0,\n          \"latency_p50_ms\": null,\n          \"latency_p95_ms\": null,\n          \"input_tokens\": 0,\n          \"output_tokens\": 0,\n          \"cost_usd\": null\n        },\n        {\n          \"t\": \"2026-08-01T15:00:00Z\",\n          \"calls\": 1,\n          \"error_count\": 0,\n          \"cancelled_count\": 0,\n          \"latency_p50_ms\": 812,\n          \"latency_p95_ms\": 812,\n          \"input_tokens\": 145,\n          \"output_tokens\": 7,\n          \"cost_usd\": \"0.000037\"\n        },\n        {\n          \"t\": \"2026-08-01T16:00:00Z\",\n          \"calls\": 0,\n          \"error_count\": 0,\n          \"cancelled_count\": 0,\n          \"latency_p50_ms\": null,\n          \"latency_p95_ms\": null,\n          \"input_tokens\": 0,\n          \"output_tokens\": 0,\n          \"cost_usd\": null\n        }\n      ]\n    }\n  ]\n}"
+            },
+            {
+              "name": "OK - ungrouped (group_by=none, single 'all' series)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs/timeseries?from=2026-08-01T14:00:00Z&to=2026-08-01T17:00:00Z&bucket=hour",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs",
+                    "timeseries"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2026-08-01T14:00:00Z"
+                    },
+                    {
+                      "key": "to",
+                      "value": "2026-08-01T17:00:00Z"
+                    },
+                    {
+                      "key": "bucket",
+                      "value": "hour"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"window\": {\n    \"from\": \"2026-08-01T14:00:00Z\",\n    \"to\": \"2026-08-01T17:00:00Z\"\n  },\n  \"bucket\": \"hour\",\n  \"group_by\": \"none\",\n  \"bucket_count\": 3,\n  \"series\": [\n    {\n      \"key\": \"all\",\n      \"is_other\": false,\n      \"points\": [\n        {\n          \"t\": \"2026-08-01T14:00:00Z\",\n          \"calls\": 0,\n          \"error_count\": 0,\n          \"cancelled_count\": 0,\n          \"latency_p50_ms\": null,\n          \"latency_p95_ms\": null,\n          \"input_tokens\": 0,\n          \"output_tokens\": 0,\n          \"cost_usd\": null\n        },\n        {\n          \"t\": \"2026-08-01T15:00:00Z\",\n          \"calls\": 2,\n          \"error_count\": 0,\n          \"cancelled_count\": 0,\n          \"latency_p50_ms\": 812,\n          \"latency_p95_ms\": 3820,\n          \"input_tokens\": 757,\n          \"output_tokens\": 291,\n          \"cost_usd\": \"0.004669\"\n        },\n        {\n          \"t\": \"2026-08-01T16:00:00Z\",\n          \"calls\": 2,\n          \"error_count\": 1,\n          \"cancelled_count\": 1,\n          \"latency_p50_ms\": 1230,\n          \"latency_p95_ms\": 30045,\n          \"input_tokens\": 800,\n          \"output_tokens\": 0,\n          \"cost_usd\": null\n        }\n      ]\n    }\n  ]\n}"
+            },
+            {
+              "name": "Validation Error - too many buckets requested",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs/timeseries?from=2026-08-01T00:00:00Z&to=2026-08-02T00:00:00Z&bucket=minute",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs",
+                    "timeseries"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2026-08-01T00:00:00Z"
+                    },
+                    {
+                      "key": "to",
+                      "value": "2026-08-02T00:00:00Z"
+                    },
+                    {
+                      "key": "bucket",
+                      "value": "minute"
+                    }
+                  ]
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": \"1440 buckets requested; the maximum is 500. Use a wider bucket or a shorter window.\"\n}"
+            },
+            {
+              "name": "Validation Error - from must be earlier than to",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/logs/timeseries?from=2026-08-02T00:00:00Z&to=2026-08-01T00:00:00Z",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "logs",
+                    "timeseries"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2026-08-02T00:00:00Z"
+                    },
+                    {
+                      "key": "to",
+                      "value": "2026-08-01T00:00:00Z"
+                    }
+                  ]
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": \"from must be earlier than to\"\n}"
             }
           ]
         },

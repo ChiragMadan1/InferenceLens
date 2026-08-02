@@ -6,10 +6,8 @@ import { Skeleton } from './components/ui/Skeleton'
 
 // FR7 — every leaf route is code-split so the logs dashboard's chart
 // bundle (spec 015) never lands in the initial payload.
-const ConversationsIndexPage = lazy(() =>
-  import('./pages/ConversationsIndexPage').then((m) => ({
-    default: m.ConversationsIndexPage,
-  })),
+const NewChatPage = lazy(() =>
+  import('./pages/NewChatPage').then((m) => ({ default: m.NewChatPage })),
 )
 const ChatPage = lazy(() =>
   import('./pages/ChatPage').then((m) => ({ default: m.ChatPage })),
@@ -47,7 +45,7 @@ export const router = createBrowserRouter([
         index: true,
         element: (
           <RouteSuspense>
-            <ConversationsIndexPage />
+            <NewChatPage />
           </RouteSuspense>
         ),
       },

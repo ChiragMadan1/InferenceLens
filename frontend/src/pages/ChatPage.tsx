@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   ApiError,
@@ -100,8 +100,12 @@ function ChatPageContent({ conversationId }: { conversationId: number }) {
   }, [])
 
   const scroll = useChatScroll()
+  const location = useLocation()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const isFirstLoadRef = useRef(true)
+  // Consumed at most once per mount — the landing screen (spec 019) hands
+  // off a draft via location.state after creating this conversation.
+  const initialDraftHandledRef = useRef(false)
 
   // FR2 — header only; independent of the messages-driven `gone`/error
   // state below (see "Note on useResource" in the spec).
@@ -216,6 +220,23 @@ function ChatPageContent({ conversationId }: { conversationId: number }) {
     }
   }, [historyLoading, gone, historyError, messages.length])
 
+  // Spec 019 FR8 — the landing screen creates this conversation and hands
+  // off the first message via location.state rather than sending it itself,
+  // so the send/stream flow only ever lives in one place. Only fires once,
+  // and only while the conversation is still genuinely empty — a returning
+  // visit (browser back, refresh) to the same history entry has messages
+  // by then and this is a no-op.
+  useEffect(() => {
+    if (initialDraftHandledRef.current) return
+    if (historyLoading || gone || historyError || messages.length > 0) return
+    const state = location.state as { initialDraft?: string } | null
+    const initialDraft = state?.initialDraft
+    if (!initialDraft) return
+    initialDraftHandledRef.current = true
+    void handleSend(initialDraft)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyLoading, gone, historyError, messages.length])
+
   // "Send handler" — FR24's four numbered steps, adapted for streaming.
   //
   // pendingUserText and streamingText are cleared with different timing on
@@ -229,9 +250,9 @@ function ChatPageContent({ conversationId }: { conversationId: number }) {
   // plain callbacks (not awaited by streamMessage — FR21), that ordering has
   // to be reconstructed here via `needsResync` rather than inside the resync
   // itself.
-  async function handleSend() {
-    if (sending || draft.trim() === '') return
-    const content = draft.trim()
+  async function handleSend(overrideContent?: string) {
+    const content = overrideContent ?? draft.trim()
+    if (sending || content === '') return
     setDraft('')
     scroll.markAppend()
     scroll.beginStream()
@@ -323,14 +344,8 @@ function ChatPageContent({ conversationId }: { conversationId: number }) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline bg-surface px-4 py-3">
+      <header className="flex flex-wrap items-center justify-between gap-3 px-6 pb-2 pt-6">
         <div className="flex min-w-0 items-center gap-3">
-          <Link
-            to="/"
-            className="shrink-0 text-sm font-medium text-ink-secondary transition-colors duration-[var(--dur-instant)] ease-out hover:text-ink"
-          >
-            ← Conversations
-          </Link>
           <h1 className="truncate text-h2 font-display text-ink">{title}</h1>
           {untitled && (
             <Chip tone="neutral" icon={pendingIcon}>
@@ -363,8 +378,9 @@ function ChatPageContent({ conversationId }: { conversationId: number }) {
           // anchor-preserving prepend in useChatScroll — both try to
           // compensate scrollTop for the same DOM growth.
           style={{ overflowAnchor: 'none' }}
-          className="flex-1 px-4 py-3"
+          className="flex-1 py-3"
         >
+        <div className="mx-auto w-full max-w-3xl px-4">
           {historyLoading && (
             <div className="flex flex-col gap-3">
               {[0, 1, 2, 3].map((index) => (
@@ -452,6 +468,7 @@ function ChatPageContent({ conversationId }: { conversationId: number }) {
                 ))}
             </div>
           )}
+        </div>
         </ScrollArea>
 
         {scroll.unreadCount > 0 && (
@@ -481,7 +498,7 @@ function ChatPageContent({ conversationId }: { conversationId: number }) {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
             transition={NOTICE_MOTION}
-            className="px-4 pt-3"
+            className="mx-auto w-full max-w-3xl px-4 pt-3"
           >
             <NoticeBanner kind={notice.kind} onDismiss={() => setNotice(null)}>
               {notice.text}

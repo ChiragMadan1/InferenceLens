@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 export type ThemePreference = 'system' | 'light' | 'dark'
 export type ResolvedTheme = 'light' | 'dark'
 
-const STORAGE_KEY = 'ollive:theme'
+const STORAGE_KEY = 'inferencelens:theme'
 const MEDIA_QUERY = '(prefers-color-scheme: dark)'
 
 function readStoredPreference(): ThemePreference {

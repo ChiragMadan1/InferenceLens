@@ -3,9 +3,10 @@ import { useId, useState, type KeyboardEvent, type ReactNode } from 'react'
 type TooltipProps = {
   label: string
   children: ReactNode
+  className?: string
 }
 
-export function Tooltip({ label, children }: TooltipProps) {
+export function Tooltip({ label, children, className }: TooltipProps) {
   const [open, setOpen] = useState(false)
   const id = useId()
 
@@ -16,7 +17,7 @@ export function Tooltip({ label, children }: TooltipProps) {
 
   return (
     <span
-      className="relative inline-flex"
+      className={['relative inline-flex', className].filter(Boolean).join(' ')}
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={close}
       onFocus={() => setOpen(true)}

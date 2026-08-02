@@ -126,8 +126,11 @@ export function MessageBubble({ role, content, createdAt, pending = false }: Mes
         animate={{ opacity: pending ? 0.6 : 1, y: 0 }}
         transition={{ duration: DUR_BASE, ease: EASE_OUT }}
         className={[
-          'group flex max-w-[80%] flex-col gap-1 rounded-md px-3 py-2 text-body',
-          isUser ? 'bg-signal-soft text-ink' : 'bg-surface text-ink',
+          'group flex flex-col gap-1 text-body text-ink',
+          // Spec 019 FR17-18: user messages keep a rounded bubble; assistant
+          // replies drop the bubble/background entirely and flow as plain
+          // text across the full column — the main fix for the boxy feel.
+          isUser ? 'max-w-[80%] rounded-2xl bg-signal-soft px-4 py-2.5' : 'w-full py-1',
         ].join(' ')}
       >
         <div className="flex items-center justify-between gap-3">
